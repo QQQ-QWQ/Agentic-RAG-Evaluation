@@ -1,0 +1,19 @@
+# 与 RunProfile 默认值一致；可按需修改或通过 ``main.py rag -c`` 指定。
+
+use_chroma_cache: true
+use_hybrid_retrieval: true
+use_query_rewrite: true
+
+dense_weight: 0.6
+bm25_weight: 0.4
+bm25_tokenizer: bigram
+
+top_k: 5
+
+use_rerank: false
+rerank_backend: llm
+rerank_pool_size: 20
+context_neighbor_chunks: 0
+
+save_jsonl_log: false
+log_dir: runs/logs

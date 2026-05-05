@@ -1,0 +1,81 @@
+config_name: c3_agentic_retrieval
+display_name: "C3 Agentic Retrieval RAG"
+description: "在 C2 基础上加入任务规划、多轮检索和 self-check，但不调用外部工具。"
+
+base_config: "c2_advanced"
+stage: "agentic_retrieval"
+
+modules:
+  document_parse: true
+  chunking: true
+  vector_retrieval: true
+  bm25_retrieval: true
+  hybrid_retrieval: true
+  query_rewrite: true
+  rerank: true
+  task_planning: true
+  multi_round_retrieval: true
+  tool_calling: false
+  self_check: true
+
+task_planning:
+  enabled: true
+  output_format: "json"
+  allowed_actions:
+    - rewrite_query
+    - retrieve
+    - rerank
+    - check_evidence
+    - second_retrieval
+    - generate_answer
+    - self_check
+
+multi_round_retrieval:
+  enabled: true
+  max_rounds: 2
+  trigger_when:
+    - evidence_insufficient
+    - citation_missing
+    - multi_doc_evidence_incomplete
+    - low_retrieval_confidence
+
+self_check:
+  enabled: true
+  prompt_file: "prompts/self_check_prompt.md"
+  check_items:
+    - answer_supported_by_evidence
+    - citation_matches_claim
+    - no_unsupported_claim
+    - should_refuse_if_evidence_insufficient
+
+tool_calling:
+  enabled: false
+
+logging:
+  save_jsonl: true
+  fields:
+    - run_id
+    - config
+    - question_id
+    - original_query
+    - task_plan
+    - rewritten_query
+    - retrieval_rounds
+    - retrieved_chunks
+    - reranked_chunks
+    - evidence_check
+    - answer
+    - citations
+    - self_check
+    - latency_ms
+    - token_cost
+    - error
+
+evaluation_focus:
+  - Recall@5
+  - Re-retrieval Success
+  - Answer Correctness
+  - Faithfulness
+  - Citation Accuracy
+  - Unsupported Claim Rate
+  - Latency

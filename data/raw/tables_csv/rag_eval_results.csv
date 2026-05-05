@@ -1,0 +1,13 @@
+# rag_eval_results
+
+> 来源: RAGAS评测框架试验数据
+> 爬取时间: 2026-05-06 01:38
+
+---
+
+model,method,faithfulness,answer_relevance,context_precision,context_recall
+GPT-4,Naive RAG,0.85,0.82,0.78,0.75
+GPT-4,Query Rewrite RAG,0.88,0.86,0.82,0.79
+GPT-4,Advanced RAG,0.91,0.89,0.87,0.84
+GPT-4,Agentic RAG,0.93,0.91,0.90,0.87
+GPT-4,Tool-Augmented RAG,0.94,0.93,0.91,0.88

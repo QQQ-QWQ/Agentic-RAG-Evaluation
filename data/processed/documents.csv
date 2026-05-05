@@ -1,0 +1,24 @@
+doc_id,title,file_path,doc_type,source,note
+doc_001,LangChain RAG 官方文档,data/raw/tech_docs/langchain_rag_overview.md,tech_doc,爬取自 LangChain 官方文档,LangChain RAG 框架核心概念详解
+doc_002,LangChain 入门指南,data/raw/tech_docs/langchain_intro.md,tech_doc,爬取自 LangChain 官方文档,LangChain 框架介绍与基础用法
+doc_003,LlamaIndex RAG 文档,data/raw/tech_docs/llamaindex_rag_overview.md,tech_doc,爬取自 LlamaIndex 官方文档,LlamaIndex 数据索引框架核心功能
+doc_004,RAGAS 评测框架文档,data/raw/tech_docs/ragas_readme.md,tech_doc,爬取自 RAGAS GitHub,RAG 评估框架指标详解
+doc_005,Dify 开源平台文档,data/raw/tech_docs/dify_readme.md,tech_doc,爬取自 Dify GitHub,低代码 RAG 应用平台功能说明
+doc_006,RAGFlow 开源平台文档,data/raw/tech_docs/ragflow_readme.md,tech_doc,爬取自 RAGFlow GitHub,企业级 RAG 平台文档
+doc_007,CrewAI 多 Agent 框架文档,data/raw/tech_docs/crewai_readme.md,tech_doc,爬取自 CrewAI GitHub,多 Agent 协作框架说明
+doc_008,LangGraph Agent 框架文档,data/raw/tech_docs/langgraph_readme.md,tech_doc,爬取自 LangGraph GitHub,基于图的状态化 Agent 框架
+doc_009,FAISS 向量检索库文档,data/raw/tech_docs/faiss_overview.md,tech_doc,爬取自 FAISS GitHub Raw,Facebook 开源向量检索库
+doc_010,Agentic RAG 技术博客,data/raw/learning_docs/agentic_rag_guide.md,learning_doc,爬取自 IBM 技术博客,Agentic RAG 概念与趋势分析
+doc_011,Agentic RAG 论文列表汇总,data/raw/learning_docs/arxiv_agentic_rag_papers_v2.md,learning_doc,爬取自 arXiv API,10 篇核心论文清单与摘要
+doc_012,Agentic RAG 综述论文,data/raw/learning_docs/arxiv_2501.09136.md,learning_doc,爬取自 arXiv API,Agentic RAG 综述 2501.09136
+doc_013,SoK Agentic RAG 论文,data/raw/learning_docs/arxiv_2603.07379.md,learning_doc,爬取自 arXiv API,Agentic RAG 分类体系 2603.07379
+doc_014,Self-RAG 论文,data/raw/learning_docs/arxiv_2310.11511.md,learning_doc,爬取自 arXiv API,自我反思 RAG 2310.11511
+doc_015,CRAG 纠错 RAG 论文,data/raw/learning_docs/arxiv_2401.15884.md,learning_doc,爬取自 arXiv API,Corrective RAG 2401.15884
+doc_016,TeaRAG 论文,data/raw/learning_docs/arxiv_2511.05385.md,learning_doc,爬取自 arXiv API,Token 高效 Agentic RAG 2511.05385
+doc_017,A-RAG 论文,data/raw/learning_docs/arxiv_2602.03442.md,learning_doc,爬取自 arXiv API,层次化检索 RAG 2602.03442
+doc_018,RAG 综述论文,data/raw/learning_docs/arxiv_2312.10997.md,learning_doc,爬取自 arXiv API,RAG 技术综述 2312.10997
+doc_019,KG-RAG 论文,data/raw/learning_docs/arxiv_2405.12035.md,learning_doc,爬取自 arXiv API,知识图谱增强 RAG 2405.12035（已修正论文ID）
+doc_020,RAG 评测实验数据,data/raw/tables_csv/rag_eval_results.csv,table_csv,模拟 RAGAS 数据集,C0-C4 各配置下的评测指标对比
+doc_021,实验室协作规范,data/raw/lab_docs/project_guidelines.md,lab_doc,项目内部文档,Git 规范与实验记录要求
+doc_022,知识库爬虫代码,data/raw/code_snippets/agentic_rag_knowledge_crawler.py,code_snippet,课题自研,使用 Scrapling 爬取知识库的自动化脚本
+doc_023,SimGRAG 论文,data/raw/learning_docs/arxiv_2412.15272.md,learning_doc,爬取自 arXiv API,基于子图的知识图谱驱动 RAG 2412.15272

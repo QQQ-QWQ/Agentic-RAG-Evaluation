@@ -1,0 +1,90 @@
+config_name: c4_tool_augmented
+display_name: "C4 Tool-Augmented Agentic RAG"
+description: "在 C3 基础上加入外部工具调用，用于文件读取、代码执行、计算和表格分析任务。"
+
+base_config: "c3_agentic_retrieval"
+stage: "tool_augmented_agentic_rag"
+
+modules:
+  document_parse: true
+  chunking: true
+  vector_retrieval: true
+  bm25_retrieval: true
+  hybrid_retrieval: true
+  query_rewrite: true
+  rerank: true
+  task_planning: true
+  multi_round_retrieval: true
+  tool_calling: true
+  self_check: true
+
+tools:
+  enabled: true
+  available_tools:
+    - name: "file_reader"
+      purpose: "运行时读取指定文件、页码、章节或片段"
+      required_for:
+        - evidence_location
+    - name: "calculator"
+      purpose: "执行比例、平均值、简单数值计算"
+      required_for:
+        - calculation
+    - name: "table_analyzer"
+      purpose: "读取 CSV 并完成统计、排序、计数"
+      required_for:
+        - table_analysis
+    - name: "code_runner"
+      purpose: "运行受限 Python 示例代码并返回输出"
+      required_for:
+        - code_execution
+
+tool_selection:
+  strategy: "rule_first_llm_assisted"
+  output_format: "json"
+  allow_multiple_tools: true
+
+tool_safety:
+  code_runner_timeout_seconds: 5
+  allow_file_write: false
+  allow_network: false
+
+self_check:
+  enabled: true
+  prompt_file: "prompts/self_check_prompt.md"
+  check_items:
+    - answer_supported_by_evidence
+    - answer_supported_by_tool_output
+    - citation_matches_claim
+    - tool_output_used_correctly
+    - no_unsupported_claim
+
+logging:
+  save_jsonl: true
+  fields:
+    - run_id
+    - config
+    - question_id
+    - original_query
+    - task_plan
+    - rewritten_query
+    - retrieval_rounds
+    - retrieved_chunks
+    - reranked_chunks
+    - tool_calls
+    - tool_outputs
+    - answer
+    - citations
+    - self_check
+    - latency_ms
+    - token_cost
+    - error
+
+evaluation_focus:
+  - Tool Selection Accuracy
+  - Tool Call Success
+  - Multi-step Task Completion
+  - Answer Correctness
+  - Faithfulness
+  - Citation Accuracy
+  - p95 Latency
+  - Token Cost

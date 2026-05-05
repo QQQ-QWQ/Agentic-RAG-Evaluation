@@ -1,0 +1,64 @@
+config_name: c1_rewrite
+display_name: "C1 Query Rewrite RAG"
+description: "在 C0 基础上加入查询诊断与 query rewrite，用于处理模糊、省略、口语化和非规范表达。"
+
+base_config: "c0_naive"
+stage: "retrieval_query_enhancement"
+
+modules:
+  document_parse: true
+  chunking: true
+  vector_retrieval: true
+  bm25_retrieval: false
+  hybrid_retrieval: false
+  query_rewrite: true
+  rerank: false
+  task_planning: false
+  multi_round_retrieval: false
+  tool_calling: false
+  self_check: false
+
+query_rewrite:
+  prompt_file: "prompts/query_rewrite_prompt.md"
+  rewrite_when:
+    - fuzzy_query
+    - colloquial_expression
+    - omitted_subject
+    - mixed_chinese_english
+    - multi_doc_comparison
+  keep_original_query: true
+  retrieval_query_strategy: "original_plus_rewritten"
+
+retrieval:
+  chunk_size: 500
+  chunk_overlap: 80
+  top_k: 5
+  score_type: "cosine_similarity"
+
+output_extra_fields:
+  - need_rewrite
+  - rewrite_reason
+  - rewritten_query
+
+logging:
+  save_jsonl: true
+  fields:
+    - run_id
+    - config
+    - question_id
+    - original_query
+    - need_rewrite
+    - rewrite_reason
+    - rewritten_query
+    - retrieved_chunks
+    - answer
+    - citations
+    - latency_ms
+    - token_cost
+    - error
+
+evaluation_focus:
+  - Rewrite Validity
+  - Recall@5
+  - Answer Correctness
+  - Citation Accuracy
