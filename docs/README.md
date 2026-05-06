@@ -34,6 +34,7 @@
 | `c0_baseline_architecture.md` | 已建立 | 说明迁移来的 C0 单文档本地 RAG baseline 的代码结构、数据流和模块边界。 |
 | `experiment_notes.md` | 已建立 | 记录每天实验过程、运行命令、结果文件、问题和解决办法。 |
 | `interface_and_logging_rules.md` | 已建立 | 固定 C0-C1 的输入输出结构、日志字段、C1 验收标准和测试办法。 |
+| `batch_experiment_guide.md` | 已建立 | 说明如何运行 C0/C1 批量实验、检查输出文件、解释初版结果和处理常见问题。 |
 
 说明：原 `team_roles.md` 的成员分工内容已经合并进 `collaboration_workflow.md`，后续不再单独维护 `team_roles.md`。
 
@@ -48,12 +49,16 @@
 - C0 已具备单文档解析、切块、embedding、内存向量 Top-K 检索和答案生成的基础链路。
 - C1 已开始实现 query rewrite，并新增了结构化接口、日志字段和基础测试。
 - 已建立一个最小样例文档：`data/raw/learning_docs/python_basic_sample.md`，用于验证单文档解析、切块和后续 C0/C1 小样例运行。
+- 已建立初版知识库登记表：`data/processed/documents.csv`，当前包含 23 条文档记录。
+- 已准备首批 20 条测试题：`data/testset/questions.csv` 和 `data/testset/references.csv`。
+- 已新增 C0/C1 批量实验入口：`run_batch_experiments.py`。
+- 已完成一次 C0/C1 20 题批量实验，生成 `runs/logs/c0_naive/run_logs.jsonl`、`runs/results/c0_results.csv`、`runs/logs/c1_rewrite/run_logs.jsonl` 和 `runs/results/c1_results.csv`。
 
 当前尚未完成：
 
-- 正式知识库尚未建立，`data/raw/` 中还没有足够的课程资料、技术文档、表格和代码片段。
-- 持久化向量数据库尚未建立，当前仍以 `SimpleVectorIndex` 内存索引为主。
-- `documents.csv`、`chunks.jsonl`、正式 `vector_index/` 尚未生成。
+- 持久化向量数据库尚未建立，当前批量实验仍以 `SimpleVectorIndex` 内存索引为主。
+- `references.csv` 中的 `evidence_chunk_id` 尚未补齐，正式 chunk 级指标还不能计算。
+- C0/C1 的人工答案质量评分、引用可信度评分和失败案例分析尚未完成。
 - C2 的 BM25、混合检索和 rerank 尚未实现。
 - C3 的任务规划、多轮检索和 self-check 尚未实现。
 - C4 的文件读取、代码执行、计算器、表格分析工具尚未实现。
@@ -67,7 +72,7 @@
 | --- | --- | --- |
 | `project_plan.md` | C1 稳定后 | 细化 C0-C4 实验主线、阶段计划、每阶段验收标准。 |
 | `data_description.md` | 正式收集资料时 | 记录知识库材料来源、文档编号、chunk 编号规则、测试集字段和数据冻结版本。 |
-| `evaluation_plan.md` | 正式跑 C0/C1 对比前 | 定义 Recall@5、MRR@10、Answer Correctness、Citation Accuracy、Tool Call Success、Latency 等指标。 |
+| `evaluation_plan.md` | C0/C1 首轮批量结果复核时 | 定义 Recall@5、MRR@10、Answer Correctness、Citation Accuracy、Tool Call Success、Latency 等指标。 |
 | `failure_cases.md` | 第一次批量实验后 | 记录失败案例、错误归因和后续修正方向，至少整理 10 个典型失败案例。 |
 | `demo_script.md` | Demo 前一周 | 记录现场演示问题、展示流程、备用问题和异常处理方案。 |
 | `final_report_outline.md` | 结题报告前 | 整理最终报告结构、实验结果表、图表和结论。 |
@@ -82,7 +87,7 @@
 1. 维护 `interface_and_logging_rules.md`，确保 C0、C1、后续 C2 都按同一输入输出结构写代码。
 2. 在 `experiment_notes.md` 记录每次运行命令、测试问题、日志路径和结果。
 3. 等正式知识库开始整理后，再建立 `data_description.md`。
-4. 等 C0/C1 能用同一测试题跑完对比后，再建立 `evaluation_plan.md`。
+4. 当前已经跑完首轮 C0/C1 批量对比，下一步应补充 `evaluation_plan.md` 和失败案例记录。
 
 ## 6. 文档更新规范
 

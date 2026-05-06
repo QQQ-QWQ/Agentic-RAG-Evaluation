@@ -63,6 +63,15 @@ def build_vector_index(
     index = SimpleVectorIndex(chunks=chunks, vectors=vectors)
     index.doc_id = Path(doc.path).stem
     index.source = doc.path
+    index.chunk_metadata = [
+        {
+            "chunk_id": f"{index.doc_id}::chunk_{i:04d}",
+            "doc_id": index.doc_id,
+            "source": doc.path,
+            "page": None,
+        }
+        for i in range(len(chunks))
+    ]
     if use_chroma:
         persist_index(path, index)
     return index
@@ -170,6 +179,7 @@ def retrieve_with_index(
     rerank_usage_total: dict[str, int] = {}
     doc_id = str(getattr(index, "doc_id", "doc_001"))
     source = str(getattr(index, "source", ""))
+    chunk_metadata = getattr(index, "chunk_metadata", None)
     tokenize = bm25_tokenize or chinese_bigram_tokenize
     for query in queries:
         query_text = query.strip()
@@ -194,18 +204,31 @@ def retrieve_with_index(
             )
         else:
             scores = dense_scores
-        scored = [
-            EvidenceChunk(
-                chunk_id=f"{doc_id}::chunk_{i:04d}",
-                doc_id=doc_id,
-                text=chunk,
-                score=scores[i],
-                source=source,
-                rank=i + 1,
-                query=query_text,
+        scored: list[EvidenceChunk] = []
+        for i, chunk in enumerate(index.chunks):
+            meta = (
+                chunk_metadata[i]
+                if isinstance(chunk_metadata, list) and i < len(chunk_metadata)
+                else {}
             )
-            for i, chunk in enumerate(index.chunks)
-        ]
+            hit_doc_id = str(meta.get("doc_id") or doc_id)
+            hit_source = str(meta.get("source") or source)
+            hit_chunk_id = str(
+                meta.get("chunk_id") or f"{hit_doc_id}::chunk_{i:04d}"
+            )
+            page = meta.get("page")
+            scored.append(
+                EvidenceChunk(
+                    chunk_id=hit_chunk_id,
+                    doc_id=hit_doc_id,
+                    text=chunk,
+                    score=scores[i],
+                    source=hit_source,
+                    page=page if isinstance(page, int) else None,
+                    rank=i + 1,
+                    query=query_text,
+                )
+            )
         scored.sort(key=lambda item: item.score, reverse=True)
         if rerank:
             pool_cap = max(top_k, min(rerank_pool_size, len(scored)))

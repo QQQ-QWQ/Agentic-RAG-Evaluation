@@ -345,14 +345,109 @@ main...origin/main
 - docs 目录成为协作、接口、架构、实验记录的统一入口。
 - 当前 README 已能作为组员 clone 后的第一入口。
 
+## 2026-05-06 C0/C1 20 题批量实验
+
+记录人：赵启行
+
+阶段：C0/C1 小规模对比实验。
+
+对应任务：用同一知识库、同一 20 条测试题分别运行 C0 Naive RAG 和 C1 Query Rewrite RAG，输出结构化 JSONL 日志和 CSV 结果表。
+
+运行命令：
+
+```powershell
+uv run ruff check .
+uv run pytest
+uv run python run_batch_experiments.py
+```
+
+输入数据：
+
+```text
+data/processed/documents.csv
+data/testset/questions.csv
+data/testset/references.csv
+```
+
+本次知识库：
+
+```text
+documents.csv: 23 条文档记录
+chunks.jsonl: 475 个 chunk
+```
+
+输出文件：
+
+```text
+runs/logs/c0_naive/run_logs.jsonl
+runs/results/c0_results.csv
+runs/logs/c1_rewrite/run_logs.jsonl
+runs/results/c1_results.csv
+data/processed/chunks.jsonl
+```
+
+本次实验边界：
+
+- C0：纯向量检索 + Top-K 证据 + 答案生成。
+- C1：在 C0 基础上只新增 query rewrite。
+- 本次未开启 BM25、hybrid retrieval、rerank、多轮检索、self-check 和工具调用。
+- 若旧的 `run_logs.jsonl` 已存在，脚本会先备份为 `run_logs.before_batch_*.jsonl`，再写入本次新日志。
+
+基础验证结果：
+
+```text
+ruff: All checks passed
+pytest: 15 passed
+```
+
+批量运行结果：
+
+| 配置 | 日志行数 | 结果行数 | 错误数 | 预期文档命中 | 平均延迟 | 平均 token |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| C0 Naive RAG | 20 | 20 | 0 | 17/20 | 7441 ms | 915 |
+| C1 Query Rewrite RAG | 20 | 20 | 0 | 18/20 | 11073 ms | 1328 |
+
+未命中预期文档的问题：
+
+```text
+C0 未命中：Q005、Q007、Q013
+C1 未命中：Q005、Q013
+```
+
+初步观察：
+
+- C1 相比 C0 多命中 1 题，主要改善了 Q007。
+- C1 平均延迟和 token 消耗高于 C0，这是 query rewrite 带来的额外成本。
+- Q005 和 Q013 在 C0/C1 下都没有命中预期文档，是后续失败案例分析的重点。
+- 当前结果只能作为初版对比，不宜直接写成正式结论。
+
+重要限制：
+
+- `references.csv` 中的 `evidence_chunk_id` 目前仍为 `pending`，因此本次只能做文档级命中粗评估，不能严格计算 chunk 级 Recall@K 和 Citation Accuracy。
+- `top_contains_expected_doc` 只判断 Top-K 中是否出现参考文档，不代表答案一定正确。
+- 工具型任务 Q016-Q019 目前仍由 C0/C1 以文本检索方式回答，不代表 C4 工具调用能力。
+
+本次新增/修改：
+
+```text
+run_batch_experiments.py
+src/agentic_rag/pipelines/local_rag.py
+data/processed/chunks.jsonl
+```
+
+当前结论：
+
+- C0/C1 的同知识库、同测试集批量实验已经跑通。
+- C1 的初步收益存在，但幅度不大，需要继续通过人工评分、gold chunk 标注和失败案例分析确认。
+- 下一阶段不应急着堆 C3/C4 功能，应先把 C0/C1/C2 的评测规范做扎实。
+
 ## 当前待办
 
 优先级从高到低：
 
-1. 配置本地 `.env`，确认 `ARK_API_KEY` 和 `DEEPSEEK_API_KEY` 可用。
-2. 用 `python_basic_sample.md` 跑一次真实 C0 和 C1。
-3. 收集 3-5 份正式知识库资料。
-4. 编写批量 ingest 脚本，生成 `documents.csv` 和 `chunks.jsonl`。
-5. 准备首批 20 条测试题和参考证据。
-6. 跑 C0 vs C1 小规模对比，记录成功案例和失败案例。
-7. C1 稳定后开始 C2：BM25、hybrid retrieval、rerank。
+1. 检查 `c0_results.csv` 和 `c1_results.csv` 中每题答案，人工标注 Answer Correctness 和 Citation 是否真正支撑答案。
+2. 补全 `references.csv` 中的 `evidence_chunk_id`，至少先补 20 题的 gold chunk。
+3. 整理 Q005、Q007、Q013 三个典型案例：说明 C1 成功/失败的原因。
+4. 建立或补充 `docs/evaluation_plan.md`，明确 Recall@5、Answer Correctness、Citation Accuracy、Latency、Token Usage 的判定规则。
+5. 在 C0/C1 结果稳定后，再开始 C2：BM25、hybrid retrieval、rerank。
+6. C2 也必须使用同一知识库、同一测试集，不能换题后再比较。

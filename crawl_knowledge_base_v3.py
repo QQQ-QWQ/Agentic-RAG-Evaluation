@@ -3,9 +3,11 @@
 """
 知识库爬虫 v3 - 使用论文ID精确获取arXiv摘要 + 更多在线内容
 """
-import os, re, time, urllib.request, xml.etree.ElementTree as ET
-from pathlib import Path
+import time
+import urllib.request
+import xml.etree.ElementTree as ET
 from datetime import datetime
+from pathlib import Path
 from scrapling.fetchers import Fetcher
 
 BASE_DIR = Path(r"D:\programss\110501agenticRAG\Agentic-RAG-Evaluation-main\data\raw")
@@ -27,7 +29,7 @@ def fetch_url(url, retries=2):
             page = Fetcher.get(url, stealthy_headers=True, timeout=15)
             if page and page.status == 200:
                 return page
-        except:
+        except Exception:
             time.sleep(2)
     return None
 
@@ -69,7 +71,8 @@ def crawl_real_arxiv_papers():
             authors = []
             for a in entry.findall('atom:author', ns):
                 n = a.find('atom:name', ns)
-                if n is not None: authors.append(n.text)
+                if n is not None:
+                    authors.append(n.text)
             
             papers.append({
                 'title': title, 'summary': summary,
@@ -87,7 +90,7 @@ def crawl_real_arxiv_papers():
         save_md('learning_docs', 'arxiv_agentic_rag_papers_v2.md', content, base_url)
         
         # 同时保存每个论文的单独文件
-        print(f"\n  保存单篇论文文件...")
+        print("\n  保存单篇论文文件...")
         for p in papers:
             paper_id_short = p['id'].split('/')[-1].split('v')[0]
             fname = f"arxiv_{paper_id_short}.md"
@@ -113,9 +116,9 @@ def crawl_vectordb_docs():
             if text and len(text) > 200:
                 save_md('tech_docs', f'{name}.md', text, url)
             else:
-                print(f"  ✗ content too short")
+                print("  ✗ content too short")
         else:
-            print(f"  ✗ failed")
+            print("  ✗ failed")
 
 def crawl_langchain_getting_started():
     """爬取LangChain入门文档"""
@@ -128,9 +131,9 @@ def crawl_langchain_getting_started():
         if text and len(text) > 200:
             save_md('tech_docs', 'langchain_intro.md', text, url)
         else:
-            print(f"  ✗ content too short")
+            print("  ✗ content too short")
     else:
-        print(f"  ✗ failed")
+        print("  ✗ failed")
 
 def crawl_langgraph_agent_docs():
     """爬取LangGraph Agent文档"""
@@ -143,9 +146,9 @@ def crawl_langgraph_agent_docs():
         if text and len(text) > 200:
             save_md('tech_docs', 'langgraph_agent_docs.md', text, url)
         else:
-            print(f"  ✗ content too short")
+            print("  ✗ content too short")
     else:
-        print(f"  ✗ failed")
+        print("  ✗ failed")
 
 def crawl_faiss_docs():
     """爬取FAISS文档"""
@@ -157,9 +160,9 @@ def crawl_faiss_docs():
         if text and len(text) > 200:
             save_md('tech_docs', 'faiss_overview.md', text, url)
         else:
-            print(f"  ✗ content too short")
+            print("  ✗ content too short")
     else:
-        print(f"  ✗ failed")
+        print("  ✗ failed")
 
 if __name__ == "__main__":
     print("=" * 60)
