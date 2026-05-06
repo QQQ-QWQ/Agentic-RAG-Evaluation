@@ -167,10 +167,14 @@ C1 还会额外包含：
 
 ```text
 need_rewrite
+rewrite_confidence
 rewrite_reason
 rewrite_type
 rewritten_query
+rewritten_queries
 ```
+
+当前 C1 会让 `retrieval_queries` 保留原始问题，并追加 `rewritten_queries` 中的多个候选检索 query。
 
 ### CSV 结果表
 

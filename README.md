@@ -10,7 +10,7 @@
 
 - 项目目录、`uv` 环境、Git 协作规范和 docs 文档入口。
 - 从 `Agentic-RAG-110` 迁移并整理 C0 单文档本地 RAG baseline。
-- 实现 C1 Query Rewrite 初版流程。
+- 实现 C1 Query Rewrite：查询诊断、检索式改写、多候选检索 query 和保守改写判断。
 - 建立初版知识库登记表：`data/processed/documents.csv`，当前共 23 条文档记录。
 - 准备首批 20 条测试题：`data/testset/questions.csv` 和 `data/testset/references.csv`。
 - 生成初版 chunk 文件：`data/processed/chunks.jsonl`，当前共 475 个 chunk。
@@ -141,7 +141,7 @@ data/processed/chunks.jsonl
 | 配置 | 名称 | 当前定位 |
 | --- | --- | --- |
 | C0 | Naive RAG | 普通 RAG baseline：文档解析、切块、embedding、Top-K 检索、答案生成。 |
-| C1 | Query Rewrite RAG | 在 C0 基础上新增查询诊断和 query rewrite。 |
+| C1 | Query Rewrite RAG | 在 C0 基础上新增 query rewrite，包含查询诊断、检索式改写、多候选 query 和保守改写判断。 |
 | C2 | Advanced RAG | 后续重点验证 BM25、hybrid retrieval、rerank、context neighbor。 |
 | C3 | Agentic Retrieval RAG | 后续新增任务规划、多轮检索和 self-check，不包含外部工具。 |
 | C4 | Tool-Augmented Agentic RAG | 后续新增文件读取、代码执行、计算器、表格分析工具。 |
@@ -154,12 +154,13 @@ data/processed/chunks.jsonl
 
 优先级从高到低：
 
-1. 补齐 `references.csv` 中的 `evidence_chunk_id`，至少先完成 20 条题的 gold chunk 标注。
-2. 人工检查 `runs/results/c0_results.csv` 和 `runs/results/c1_results.csv`，标注 Answer Correctness 和 Citation Accuracy。
-3. 整理 Q005、Q007、Q013 等典型案例，说明 C1 什么时候有效、什么时候收益有限。
-4. 新增 `docs/evaluation_plan.md`，固定 Recall@5、Answer Correctness、Citation Accuracy、Latency、Token Usage 等指标的判定规则。
-5. 在 C0/C1 结果稳定后，再进入 C2：BM25、hybrid retrieval、rerank 和 context neighbor 对比实验。
-6. C2 仍然必须使用同一知识库、同一测试集，不能换题后再比较。
+1. 重新运行 C0/C1 批量实验，验证 C1 的日志字段和检索结果。
+2. 补齐 `references.csv` 中的 `evidence_chunk_id`，至少先完成 20 条题的 gold chunk 标注。
+3. 人工检查 `runs/results/c0_results.csv` 和 `runs/results/c1_results.csv`，标注 Answer Correctness 和 Citation Accuracy。
+4. 整理 Q005、Q007、Q013 等典型案例，说明 C1 什么时候有效、什么时候收益有限。
+5. 新增 `docs/evaluation_plan.md`，固定 Recall@5、Answer Correctness、Citation Accuracy、Latency、Token Usage 等指标的判定规则。
+6. 在 C0/C1 结果稳定后，再进入 C2：BM25、hybrid retrieval、rerank 和 context neighbor 对比实验。
+7. C2 仍然必须使用同一知识库、同一测试集，不能换题后再比较。
 
 建议分工：
 

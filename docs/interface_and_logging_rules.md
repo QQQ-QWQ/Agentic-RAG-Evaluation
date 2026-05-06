@@ -38,9 +38,15 @@ C1 的 query rewrite 模块输出 `RewriteResult`：
 ```json
 {
   "need_rewrite": true,
+  "rewrite_confidence": 0.85,
   "rewrite_reason": "原问题存在口语化表达，检索关键词不足",
-  "rewritten_query": "规范化后的检索查询",
   "rewrite_type": "colloquial",
+  "rewritten_query": "最重要的单个检索 query",
+  "rewritten_queries": [
+    "语义检索 query",
+    "关键词检索 query",
+    "实体、文件名、代码名相关 query"
+  ],
   "raw_output": "LLM 原始输出",
   "token_usage": {
     "prompt_tokens": 0,
@@ -53,9 +59,11 @@ C1 的 query rewrite 模块输出 `RewriteResult`：
 约束：
 
 - `rewritten_query` 必须保留原问题意图。
+- `rewritten_queries` 用于保存多个候选检索 query，最多 3-4 个，不能引入用户没有提到的新目标。
+- `rewrite_confidence` 低于阈值时视为不改写，避免清晰问题被乱改。
 - 代码标识符、数字、公式、文件名、专有名词不能随意改动。
 - 如果原问题已经清楚，`need_rewrite=false`，`rewritten_query` 保持原问题。
-- C1 检索默认使用 `original_plus_rewritten` 策略，即同时保留原始问题和改写问题进行检索。
+- C1 检索默认使用 `original_plus_multi_candidate_rewritten` 策略，即保留原始问题，并追加多个改写后的检索 query。
 
 ## 4. 证据结构 EvidenceChunk
 
@@ -108,9 +116,11 @@ C1 在 C0 基础上额外增加：
 ```json
 {
   "need_rewrite": true,
+  "rewrite_confidence": 0.85,
   "rewrite_reason": "改写原因",
   "rewrite_type": "colloquial",
-  "rewritten_query": "改写后的查询"
+  "rewritten_query": "最重要的单个检索 query",
+  "rewritten_queries": ["候选 query 1", "候选 query 2"]
 }
 ```
 
@@ -124,7 +134,7 @@ C1 完成后至少要通过以下检查：
 | JSON 稳定性 | 10 条样例中 query rewrite 输出能被解析为 JSON 的比例为 100%。 |
 | 改写有效性 | 人工抽查的 Rewrite Validity 平均分不低于 0.8。 |
 | 保真性 | 改写不改变原问题目标，不丢失代码名、公式、数字和关键术语。 |
-| 日志完整性 | 每条运行日志包含 `original_query`、`need_rewrite`、`rewritten_query`、`retrieval_queries`、`retrieved_chunks`、`answer`、`citations`、`latency_ms`、`error`。 |
+| 日志完整性 | 每条运行日志包含 `original_query`、`need_rewrite`、`rewrite_confidence`、`rewritten_query`、`rewritten_queries`、`retrieval_queries`、`retrieved_chunks`、`answer`、`citations`、`latency_ms`、`error`。 |
 | 对比可运行 | 同一批测试题可以分别跑 C0 和 C1，并输出同结构结果。 |
 
 Rewrite Validity 人工评分建议：

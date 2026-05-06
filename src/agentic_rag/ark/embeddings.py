@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import time
+
 import httpx
 
 from agentic_rag import config
@@ -66,7 +68,22 @@ def _embed_one_batch(
         "encoding_format": encoding_format,
         "dimensions": dimensions,
     }
-    r = http.post(url, headers=headers, json=body)
+    last_error: Exception | None = None
+    r: httpx.Response | None = None
+    for attempt in range(3):
+        try:
+            r = http.post(url, headers=headers, json=body)
+            if not (r.status_code == 429 or 500 <= r.status_code < 600):
+                break
+        except httpx.HTTPError as exc:
+            last_error = exc
+            if attempt == 2:
+                raise
+        time.sleep(2 * (attempt + 1))
+    if r is None:
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("鏂硅垷鍚戦噺鎺ュ彛鏈繑鍥炲搷搴?")
     if r.is_error:
         detail = (r.text or "")[:800]
         raise RuntimeError(

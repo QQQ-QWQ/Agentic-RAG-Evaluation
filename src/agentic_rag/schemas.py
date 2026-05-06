@@ -21,6 +21,8 @@ class RewriteResult:
     rewrite_reason: str
     rewritten_query: str
     rewrite_type: str = "none"
+    rewritten_queries: list[str] = field(default_factory=list)
+    rewrite_confidence: float = 0.0
     raw_output: str = ""
     token_usage: dict[str, int] = field(default_factory=dict)
 

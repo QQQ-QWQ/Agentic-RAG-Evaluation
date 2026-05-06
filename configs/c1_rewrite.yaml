@@ -1,6 +1,6 @@
 config_name: c1_rewrite
 display_name: "C1 Query Rewrite RAG"
-description: "在 C0 基础上加入查询诊断与 query rewrite，用于处理模糊、省略、口语化和非规范表达。"
+description: "在 C0 基础上只优化 query rewrite：检索式 Prompt v2、多候选检索 query、保守改写判断。"
 
 base_config: "c0_naive"
 stage: "retrieval_query_enhancement"
@@ -20,6 +20,7 @@ modules:
 
 query_rewrite:
   prompt_file: "prompts/query_rewrite_prompt.md"
+  version: "prompt-v2"
   rewrite_when:
     - fuzzy_query
     - colloquial_expression
@@ -27,7 +28,10 @@ query_rewrite:
     - mixed_chinese_english
     - multi_doc_comparison
   keep_original_query: true
-  retrieval_query_strategy: "original_plus_rewritten"
+  retrieval_query_strategy: "original_plus_multi_candidate_rewritten"
+  max_rewritten_queries: 4
+  min_rewrite_confidence: 0.55
+  conservative_rewrite: true
 
 retrieval:
   chunk_size: 500
@@ -37,8 +41,10 @@ retrieval:
 
 output_extra_fields:
   - need_rewrite
+  - rewrite_confidence
   - rewrite_reason
   - rewritten_query
+  - rewritten_queries
 
 logging:
   save_jsonl: true
@@ -48,8 +54,10 @@ logging:
     - question_id
     - original_query
     - need_rewrite
+    - rewrite_confidence
     - rewrite_reason
     - rewritten_query
+    - rewritten_queries
     - retrieved_chunks
     - answer
     - citations

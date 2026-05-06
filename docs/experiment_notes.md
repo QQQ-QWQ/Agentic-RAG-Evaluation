@@ -441,6 +441,171 @@ data/processed/chunks.jsonl
 - C1 的初步收益存在，但幅度不大，需要继续通过人工评分、gold chunk 标注和失败案例分析确认。
 - 下一阶段不应急着堆 C3/C4 功能，应先把 C0/C1/C2 的评测规范做扎实。
 
+## 2026-05-06 C1 Query Rewrite 一次优化
+
+记录人：赵启行
+
+阶段：C1 内部优化，但不作为正式消融实验。
+
+对应任务：只在 C1 边界内进行一次 query rewrite 优化，不引入 BM25、rerank、self-check、多轮检索或工具调用。
+
+优化目标：
+
+1. Prompt v2：让改写结果更像检索 query，而不是普通聊天问句。
+2. 多候选 query：从单个 `rewritten_query` 扩展为 `rewritten_queries`，支持语义 query、关键词 query 和实体/文件/代码相关 query。
+3. 保守改写：新增 `rewrite_confidence`，当置信度不足或原问题已经清晰时，不进行改写，避免乱改写导致检索劣化。
+
+涉及文件：
+
+```text
+src/agentic_rag/schemas.py
+src/agentic_rag/rewrite.py
+src/agentic_rag/pipelines/local_rag.py
+prompts/query_rewrite_prompt.md
+configs/c1_rewrite.yaml
+run_batch_experiments.py
+docs/interface_and_logging_rules.md
+tests/test_rewrite.py
+```
+
+边界说明：
+
+- 本次不加入术语别名表。
+- 本次不做 C1 内部消融实验。
+- 本次优化后仍统一称为 `C1`，不在主线中拆分 C1 子版本。
+- 正式实验中仍然只比较 `C0 -> C1 -> C2 -> C3 -> C4`。
+- 当前 C1 只是更强的 query rewrite，不代表 C2/C3/C4 能力。
+
+后续验证方式：
+
+```powershell
+uv run ruff check .
+uv run pytest
+uv run python run_batch_experiments.py
+```
+
+验证重点：
+
+- C1 日志中应出现 `rewrite_confidence` 和 `rewritten_queries`。
+- `retrieval_queries` 应保留原问题，并追加多个候选检索 query。
+- 清晰问题不应被强行改写。
+- 重新跑同一 20 题后，再比较 C0 与 C1 的文档命中、人工答案质量、引用可信度、延迟和 token 成本。
+
+## 2026-05-06 C1-final 重跑结果与分析
+
+记录人：赵启行
+
+阶段：C1 优化后复测。
+
+说明：本节仅在实验报告中使用 `C1-final` 这个名称，用于区分“优化前 C1”和“优化后 C1”。项目主线、README 和配置中仍统一称为 `C1`。
+
+运行目的：
+
+- 验证 C1 的一次优化是否真正提升文档级命中。
+- 观察多候选 query 和保守改写判断带来的延迟与 token 成本。
+- 分析 C1 的有效任务类型和收益边界。
+
+运行命令：
+
+```powershell
+uv run ruff check .
+uv run pytest
+uv run python run_batch_experiments.py
+```
+
+运行说明：
+
+- 本次仍使用同一知识库、同一 20 条测试题。
+- C0 不变。
+- C1-final 只改变 query rewrite，不启用 BM25、hybrid retrieval、rerank、多轮检索、self-check 或工具调用。
+- 首次完整运行时，部分 DeepSeek 调用耗时异常，导致批量脚本超时；随后对缺失/错误题进行了补跑，并整理为每个配置 20 行干净日志和 CSV。
+- 为避免后续实验被单次 API 调用长时间阻塞，已为 DeepSeek 客户端增加 60 秒超时，为 Ark embedding 增加轻量重试。
+
+输出文件：
+
+```text
+runs/logs/c0_naive/run_logs.jsonl
+runs/results/c0_results.csv
+runs/logs/c1_rewrite/run_logs.jsonl
+runs/results/c1_results.csv
+```
+
+基础检查：
+
+```text
+ruff: All checks passed
+pytest: 18 passed
+C0 日志行数: 20, error: 0
+C1 日志行数: 20, error: 0
+```
+
+总体结果：
+
+| 配置 | 文档级命中 | 未命中题目 | 平均延迟 | 平均 token | 平均检索 query 数 |
+| --- | ---: | --- | ---: | ---: | ---: |
+| C0 | 17/20 | Q005、Q007、Q013 | 7382 ms | 962 | 1.00 |
+| 旧 C1 | 18/20 | Q005、Q013 | 11073 ms | 1329 | 1.75 |
+| C1-final | 19/20 | Q013 | 37060 ms | 1905 | 3.95 |
+
+按任务类型统计：
+
+| 任务类型 | C0 | C1-final | 观察 |
+| --- | ---: | ---: | --- |
+| simple_qa | 4/4 | 4/4 | 清晰事实题中 C1 没有明显额外收益。 |
+| fuzzy_query | 2/4 | 4/4 | C1-final 的主要收益来自模糊/口语化问题。 |
+| multi_doc | 4/4 | 4/4 | 本轮多文档题 C0 已能命中，C1 提升不明显。 |
+| table_analysis | 2/3 | 2/3 | Q013 仍失败，说明仅 query rewrite 不足以解决表格/文件定位干扰。 |
+| calculation | 2/2 | 2/2 | 计算题当前仍按文本检索处理，不代表 C4 工具能力。 |
+| code_execution | 2/2 | 2/2 | 代码题当前仍按文本检索处理，不代表 C4 工具能力。 |
+| insufficient_evidence | 1/1 | 1/1 | 当前样例可命中相关材料，但仍需人工判断答案是否保守。 |
+
+关键案例：
+
+1. Q005：C1-final 成功改善。
+
+```text
+问题：我看到一篇论文说能让大模型自己判断什么时候去查资料再回答，那篇论文提出了什么方法？
+C0 Top 文档：doc_017、doc_011 等，未命中预期 doc_014。
+旧 C1 Top 文档：doc_001、doc_017、doc_011 等，仍未命中 doc_014。
+C1-final Top 文档：doc_014、doc_011、doc_011、doc_014、doc_011，命中预期 doc_014。
+```
+
+原因分析：C1-final 生成了多个更像检索 query 的候选，例如“大模型 自主判断 检索 时机 方法 论文”和“LLM decide when to retrieve before answering paper”，比旧 C1 的单个自然语言改写更容易匹配 Self-RAG 相关资料。
+
+2. Q007：C1-final 相比 C0 改善，但答案仍不够完整。
+
+```text
+问题：我们课题组要做 RAG 系统，我应该参考哪些开源项目？
+C0 未命中预期文档集合。
+C1-final 命中了 RAGFlow 等相关文档。
+```
+
+原因分析：多候选 query 能提升“开源项目推荐”类问题的入口检索，但由于 Top-K 中仍混入 RAGAS、论文综述等内容，答案覆盖 Dify、RAGFlow、CrewAI、LangGraph 仍不稳定。该问题后续更适合交给 C2 的 hybrid retrieval / rerank 优化。
+
+3. Q013：C1-final 仍失败。
+
+```text
+问题：从 arxiv_agentic_rag_papers_v2.md 中统计论文的类型分布。
+预期文档：doc_011。
+C1-final Top 文档：doc_022、doc_022、doc_012、doc_022、doc_013。
+```
+
+原因分析：虽然 C1-final 明确加入了文件名和“论文类型分布”等关键词，但检索仍被 `agentic_rag_knowledge_crawler.py` 相关 chunk 干扰。该问题不是单纯 query rewrite 可以解决的，更像是 chunk 级排序、文件名过滤、hybrid retrieval 或 rerank 的问题，应进入 C2 分析。
+
+当前结论：
+
+- C1-final 相比 C0 有明确收益，文档级命中从 17/20 提升到 19/20。
+- C1-final 相比旧 C1 也有提升，主要解决了 Q005。
+- C1-final 的收益高度集中在 fuzzy_query 类型任务，说明 query rewrite 更适合处理表达不规范、口语化、语义模糊的问题。
+- C1-final 的代价明显上升，平均延迟和 token 均高于 C0 与旧 C1。
+- C1-final 不能解决所有问题。对 Q013 这类受 chunk 干扰、文件定位和排序影响较大的任务，应交给 C2 的检索增强模块继续优化。
+
+可写入后续报告的表述：
+
+```text
+C1-final 的实验结果表明，查询改写对模糊表达和口语化问题具有明显帮助，能够提高相关文档命中率；但多候选 query 会带来额外 token 和延迟成本。对于清晰事实题、工具型任务和受 chunk 排序干扰的问题，单独 query rewrite 的收益有限，需要进一步结合 hybrid retrieval、rerank 或工具调用模块。
+```
+
 ## 当前待办
 
 优先级从高到低：

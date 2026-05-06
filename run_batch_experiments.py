@@ -18,6 +18,7 @@ DOCUMENTS_CSV = ROOT / "data" / "processed" / "documents.csv"
 CHUNKS_JSONL = ROOT / "data" / "processed" / "chunks.jsonl"
 QUESTIONS_CSV = ROOT / "data" / "testset" / "questions.csv"
 REFERENCES_CSV = ROOT / "data" / "testset" / "references.csv"
+C1_PROMPT = ROOT / "prompts" / "query_rewrite_prompt.md"
 LOG_ROOT = ROOT / "runs" / "logs"
 RESULT_ROOT = ROOT / "runs" / "results"
 
@@ -185,7 +186,12 @@ def result_to_row(
         "citations": json.dumps(citations, ensure_ascii=False),
         "answer": result.get("answer", ""),
         "need_rewrite": result.get("need_rewrite", ""),
+        "rewrite_confidence": result.get("rewrite_confidence", ""),
         "rewritten_query": result.get("rewritten_query", ""),
+        "rewritten_queries": json.dumps(
+            result.get("rewritten_queries", []),
+            ensure_ascii=False,
+        ),
         "rewrite_reason": result.get("rewrite_reason", ""),
         "rewrite_type": result.get("rewrite_type", ""),
         "query_rewrite_tokens": rewrite_usage.get("total_tokens", ""),
@@ -214,7 +220,9 @@ def write_results_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "citations",
         "answer",
         "need_rewrite",
+        "rewrite_confidence",
         "rewritten_query",
+        "rewritten_queries",
         "rewrite_reason",
         "rewrite_type",
         "query_rewrite_tokens",
@@ -251,7 +259,12 @@ def run_config(
         if config_name == "c0_naive":
             result = run_c0_with_index(index, question, **common_kwargs)
         elif config_name == "c1_rewrite":
-            result = run_c1_with_index(index, question, **common_kwargs)
+            result = run_c1_with_index(
+                index,
+                question,
+                prompt_file=C1_PROMPT,
+                **common_kwargs,
+            )
         else:
             raise ValueError(f"Unsupported config: {config_name}")
         rows.append(result_to_row(result, question_row, references.get(qid)))

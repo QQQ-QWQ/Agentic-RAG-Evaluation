@@ -11,4 +11,6 @@ def create_deepseek_client() -> OpenAI:
     return OpenAI(
         api_key=config.DEEPSEEK_API_KEY,
         base_url=config.DEEPSEEK_BASE_URL,
+        timeout=60.0,
+        max_retries=2,
     )
