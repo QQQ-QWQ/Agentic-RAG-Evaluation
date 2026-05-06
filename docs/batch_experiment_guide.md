@@ -160,8 +160,19 @@ data/processed/chunks.jsonl
 | `answer` | 生成答案 |
 | `citations` | 引用信息 |
 | `latency_ms` | 延迟 |
-| `token_usage` | token 统计 |
+| `token_usage` | token 统计（见下；须由接口返回 usage，不做估算） |
 | `error` | 错误信息 |
+
+`token_usage` 按「平台 / 步骤」分槽位，便于对照账单或排查：
+
+| 槽位 key | 平台 / 含义 |
+| --- | --- |
+| `ark_volcengine_embedding` | **火山方舟**：embedding（检索侧 query 向量等）；含 `prompt_tokens`、`completion_tokens`、`total_tokens`（须由方舟接口返回） |
+| `query_rewrite` | **DeepSeek**：query 改写 |
+| `rerank` | **DeepSeek**：检索后重排（未启用重排时可为空字典） |
+| `answer_generation` | **DeepSeek**：最终答案生成 |
+
+各槽位均为字典。**平台合计**：方舟仅累加 `ark_volcengine_embedding.total_tokens`；DeepSeek 为 `query_rewrite` + `rerank` + `answer_generation` 三个槽位的 `total_tokens` 之和（与 CSV 的 `volcengine_ark_total_tokens`、`deepseek_total_tokens` 一致）。**`total_tokens`** = 两平台上述合计之和。若方舟或 DeepSeek 响应缺少 `usage`/`total_tokens`，运行会失败，避免写入估算值。
 
 C1 还会额外包含：
 
@@ -172,7 +183,10 @@ rewrite_reason
 rewrite_type
 rewritten_query
 rewritten_queries
+query_rewrite_model_raw
 ```
+
+其中 `query_rewrite_model_raw` 为改写模型返回的**原始文本**（多为 JSON），便于核对改写是否真的按 prompt 输出。
 
 当前 C1 会让 `retrieval_queries` 保留原始问题，并追加 `rewritten_queries` 中的多个候选检索 query。
 
@@ -189,8 +203,16 @@ rewritten_queries
 | `top_chunk_ids` | Top-K chunk 编号 |
 | `top_doc_ids` | Top-K 文档编号 |
 | `answer` | 答案 |
-| `latency_ms` | 延迟 |
-| `total_tokens` | 总 token |
+| `citations` | 生成答案时附带的引用（JSON：`doc_id` / `chunk_id`） |
+| `latency_ms` | 端到端延迟（毫秒） |
+| `retrieval_query_count` | 本条实际发起的检索 query 条数（C0 多为 1；C1 含原始 + 改写候选） |
+| `query_rewrite_tokens` | DeepSeek 改写步骤 `total_tokens` |
+| `deepseek_rerank_tokens` | DeepSeek 重排步骤 `total_tokens` |
+| `answer_tokens` | DeepSeek 答案生成 `total_tokens` |
+| `volcengine_ark_total_tokens` | **火山方舟** embedding 合计（与 JSONL 中 `token_usage.ark_volcengine_embedding.total_tokens` 一致） |
+| `deepseek_total_tokens` | **DeepSeek** 合计（改写 + 重排 + 答案生成） |
+| `query_rewrite_model_response` | C1 改写模型原始输出（过长会截断并加 `...[truncated]`）；C0 为空 |
+| `total_tokens` | `volcengine_ark_total_tokens` + `deepseek_total_tokens` |
 
 注意：`top_contains_expected_doc=True` 只能说明检索到了参考文档，不等于答案一定正确。
 
@@ -307,3 +329,15 @@ run_logs.jsonl
 - 是否泄露 Key；
 - 是否有不该提交的大文件；
 - 是否需要提交代码、文档或只保留本地结果。
+
+---
+
+## C2 检索三组消融（混合 / +重排 / +上下文补全）
+
+与本文 C0/C1 **并行**：在同一测试集上单独运行检索栈对比时，使用项目根目录脚本：
+
+```powershell
+uv run python run_c2_retrieval_ablation.py
+```
+
+说明与指标字段见 [`c2_ablation_guide.md`](c2_ablation_guide.md)。输出为 `runs/results/c2_ablation_*_results.csv` 与 `c2_ablation_summary.json`；记录实验时请把命令与 summary 摘要写入 `experiment_notes.md`。

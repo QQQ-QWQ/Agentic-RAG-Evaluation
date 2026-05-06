@@ -52,6 +52,28 @@ def _mrl_truncate(vec: list[float], dim: int) -> list[float]:
     return vec[:dim]
 
 
+def _usage_from_api_payload(data: dict) -> dict[str, int]:
+    """方舟/OpenAI 风格 usage；若无则返回空字典。"""
+    raw = data.get("usage")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, int] = {}
+    for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        v = raw.get(key)
+        if v is not None:
+            try:
+                out[key] = int(v)
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def _merge_usage(acc: dict[str, int], delta: dict[str, int]) -> None:
+    for k, v in delta.items():
+        if k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            acc[k] = acc.get(k, 0) + int(v)
+
+
 def _embed_one_batch(
     http: httpx.Client,
     url: str,
@@ -61,7 +83,7 @@ def _embed_one_batch(
     model: str,
     dimensions: int,
     encoding_format: str,
-) -> list[list[float]]:
+) -> tuple[list[list[float]], dict[str, int]]:
     body: dict = {
         "model": model,
         "input": [{"type": "text", "text": t} for t in batch],
@@ -83,7 +105,7 @@ def _embed_one_batch(
     if r is None:
         if last_error is not None:
             raise last_error
-        raise RuntimeError("鏂硅垷鍚戦噺鎺ュ彛鏈繑鍥炲搷搴?")
+        raise RuntimeError("方舟向量接口未返回可用响应")
     if r.is_error:
         detail = (r.text or "")[:800]
         raise RuntimeError(
@@ -93,17 +115,19 @@ def _embed_one_batch(
     err = data.get("error")
     if err:
         raise RuntimeError(err)
+    batch_usage = _usage_from_api_payload(data)
     vecs = _parse_embedding_payload(data.get("data"))
     if len(vecs) == len(batch):
-        return [_mrl_truncate(v, dimensions) for v in vecs]
+        return [_mrl_truncate(v, dimensions) for v in vecs], batch_usage
     # 部分套餐单次只返回一条融合向量：逐条请求
     if len(batch) == 1:
         raise RuntimeError(
             f"期望 1 条向量，解析得到 {len(vecs)} 条，请检查接口响应格式"
         )
     out: list[list[float]] = []
+    u_total: dict[str, int] = dict(batch_usage)
     for t in batch:
-        one = _embed_one_batch(
+        one, u_one = _embed_one_batch(
             http,
             url,
             headers,
@@ -113,7 +137,8 @@ def _embed_one_batch(
             encoding_format=encoding_format,
         )
         out.extend(one)
-    return out
+        _merge_usage(u_total, u_one)
+    return out, u_total
 
 
 def embed_texts(
@@ -123,10 +148,14 @@ def embed_texts(
     dimensions: int | None = None,
     is_query: bool = False,
     encoding_format: str = "float",
+    usage_out: dict[str, int] | None = None,
 ) -> list[list[float]]:
     """
     文本向量化：调用 `POST .../embeddings/multimodal`，每项为 {"type":"text","text":...}。
     `dimensions` 与官方一致，取 1024 或 2048（见环境变量 ARK_EMBEDDING_DIMENSIONS）。
+
+    若传入 ``usage_out``，会累加方舟返回的 ``usage``（prompt/completion/total_tokens）。
+    实验路径要求接口 JSON 顶层含 ``usage``；缺失则抛错，不做估算。
     """
     if not texts:
         return []
@@ -156,7 +185,7 @@ def embed_texts(
     with httpx.Client(timeout=120.0) as http:
         for i in range(0, len(to_embed), _BATCH):
             batch = to_embed[i : i + _BATCH]
-            vecs = _embed_one_batch(
+            vecs, batch_usage = _embed_one_batch(
                 http,
                 url,
                 headers,
@@ -166,5 +195,13 @@ def embed_texts(
                 encoding_format=encoding_format,
             )
             all_vecs.extend(vecs)
+            if usage_out is not None:
+                if not batch_usage:
+                    raise RuntimeError(
+                        "火山方舟 embedding 响应未包含 usage 字段，无法记录准确 token。"
+                        "请确认 POST .../embeddings/multimodal 的 JSON 顶层含 usage"
+                        "（prompt_tokens / total_tokens 等），或查阅火山方舟控制台文档。"
+                    )
+                _merge_usage(usage_out, batch_usage)
 
     return all_vecs

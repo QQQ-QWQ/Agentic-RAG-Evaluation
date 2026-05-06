@@ -6,6 +6,7 @@ from typing import Any
 
 from agentic_rag import config
 from agentic_rag.llm.deepseek import create_deepseek_client
+from agentic_rag.llm.usage_strict import require_deepseek_chat_usage
 from agentic_rag.schemas import RewriteResult
 
 
@@ -221,11 +222,13 @@ def rewrite_query(
     )
     raw_output = (response.choices[0].message.content or "").strip()
     payload = extract_json_object(raw_output)
+    usage_dict = usage_to_dict(getattr(response, "usage", None))
+    require_deepseek_chat_usage(usage_dict, where="Query 改写")
     return normalize_rewrite_payload(
         payload,
         original_query=original_query,
         raw_output=raw_output,
-        token_usage=usage_to_dict(getattr(response, "usage", None)),
+        token_usage=usage_dict,
     )
 
 

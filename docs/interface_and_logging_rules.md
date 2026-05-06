@@ -152,3 +152,13 @@ Rewrite Validity 人工评分建议：
 3. 小样例对比：选 5-10 条模糊问题，人工比较 C0 与 C1 的 Top-K 证据是否更贴近参考答案。
 
 正式实验前，测试集、Prompt、配置文件和模型名称都要冻结，并在 `docs/experiment_notes.md` 中记录版本。
+
+## 8. AI 评判模块输出（可选流水线）
+
+当使用 ``agentic_rag.evaluation.ai_answer_judge`` 对生成答案按题库 ``judge_rule`` 打分时：
+
+- 单次调用返回字段见 ``docs/evaluation_ai_judge.md``；
+- 写入结果 CSV 时追加 ``correctness_score``、``correctness_label``、``judge_reason`` 等列；
+- **自动化分数不等于最终正确性**：最终结论需结合人工标注后再定；与人评对比可用于评估后续 AI 自规划 / 自检环节可信度。
+
+仓库根脚本：``run_score_answer_accuracy.py``、``run_c2_ablation_answer_accuracy.py``。

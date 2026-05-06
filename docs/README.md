@@ -35,6 +35,8 @@
 | `experiment_notes.md` | 已建立 | 记录每天实验过程、运行命令、结果文件、问题和解决办法。 |
 | `interface_and_logging_rules.md` | 已建立 | 固定 C0-C1 的输入输出结构、日志字段、C1 验收标准和测试办法。 |
 | `batch_experiment_guide.md` | 已建立 | 说明如何运行 C0/C1 批量实验、检查输出文件、解释初版结果和处理常见问题。 |
+| `c2_ablation_guide.md` | 已建立 | C2 检索消融（混合 / +重排 / +邻接上下文）脚本用法与输出说明。 |
+| `evaluation_ai_judge.md` | 已建立 | 独立 AI 评判（LLM-as-judge）模块定位、字段与与人评对齐说明。 |
 
 说明：原 `team_roles.md` 的成员分工内容已经合并进 `collaboration_workflow.md`，后续不再单独维护 `team_roles.md`。
 
@@ -59,7 +61,7 @@
 - 持久化向量数据库尚未建立，当前批量实验仍以 `SimpleVectorIndex` 内存索引为主。
 - `references.csv` 中的 `evidence_chunk_id` 尚未补齐，正式 chunk 级指标还不能计算。
 - C0/C1 的人工答案质量评分、引用可信度评分和失败案例分析尚未完成。
-- C2 的 BM25、混合检索和 rerank 尚未实现。
+- C2 检索链路（BM25、混合检索、rerank、邻接上下文）已在代码中实现；**2026-05-06** 由李金航完成首轮 **C2 三阶段消融**跑通，记录见 `experiment_notes.md` 同日期条目，结果见 `runs/results/c2_*`。
 - C3 的任务规划、多轮检索和 self-check 尚未实现。
 - C4 的文件读取、代码执行、计算器、表格分析工具尚未实现。
 - 正式测试集、公共 Benchmark 参考子集和 Dify/RAGFlow 横向对比尚未开始。

@@ -1,0 +1,21 @@
+question_id,question,task_type,difficulty,required_tool,expected_path,note
+Q001,LangChain RAG 框架包含哪些核心组件？请至少列出三个并说明各自作用。,simple_qa,easy,none,C0,考查对 LangChain RAG 组件体系的基本认知
+Q002,RAGAS 评测框架用于评估 RAG 系统的哪些方面？请列出至少两个指标并解释。,simple_qa,easy,none,C0,考查对 RAGAS 评估指标的理解
+Q003,LangGraph 作为 Agent 框架的核心功能是什么？它与 LangChain 有什么关系？,simple_qa,medium,none,C0,考查对 LangGraph Agent 框架的基本认识
+Q004,FAISS 向量检索库的主要用途是什么？它解决了 RAG 系统中的什么问题？,simple_qa,medium,none,C0,考查对向量检索在 RAG 中作用的理解
+Q005,我看到一篇论文说能让大模型自己判断什么时候去查资料再回答，那篇论文提出了什么方法？,fuzzy_query,medium,none,C1,口语化问题；期望回答 Self-RAG 的自我反思机制
+Q006,有个综述文章总结了 Agentic RAG 的各种技术，里面到底包括哪些方向？,fuzzy_query,medium,none,C1,口语化问题；期望从 Agentic RAG 综述中提取子方向
+Q007,我们课题组要做 RAG 系统，我应该参考哪些开源项目？能给个推荐清单吗？,fuzzy_query,medium,none,C1,口语化问题；需推荐 Dify/RAGFlow/CrewAI/LangGraph 等
+Q008,现在这些 RAG 改进方案（Self-RAG、CRAG、A-RAG 等）到底哪个更好用？,fuzzy_query,hard,none,C1,口语化问题；需说明各有侧重、取决于场景
+Q009,对比 LangChain 和 LlamaIndex 这两个框架在 RAG 实现上的设计思路差异。,multi_doc,medium,none,C2,需综合比较两个框架文档中的架构设计
+Q010,Self-RAG 和 CRAG 分别通过什么机制实现检索质量的改进？两者有什么不同？,multi_doc,medium,none,C2,需对比两篇论文的摘要内容
+Q011,Dify 和 RAGFlow 都是开源 RAG 平台，它们在功能和定位上有什么主要区别？,multi_doc,hard,none,C2,需综合对比两个平台的文档
+Q012,Agentic RAG 综述（2501.09136）和 SoK（2603.07379）两篇论文在对 Agentic RAG 的分类方式上有什么不同？,multi_doc,hard,none,C2,需对比两篇综述的分类体系
+Q013,从 arxiv_agentic_rag_papers_v2.md 中统计论文的类型分布，共有几种类型？每种类型包含哪些论文？,table_analysis,medium,table_analyzer,C4,需统计论文列表；涉及至少 Survey/Method/Tool 等类型
+Q014,从已有论文列表中归纳出 RAG 的改进方向有哪些？每个方向用一句话说明其核心思路。,table_analysis,hard,none,C2,需提取和归纳多篇论文信息
+Q015,将 CrewAI、Dify、RAGFlow、LangGraph 四个项目分类为 RAG 平台或 Agent 框架，并说明分类依据。,table_analysis,medium,none,C2,需对比多个项目文档确定定位
+Q016,根据 rag_eval_results.csv 中的数据，计算 Naive RAG 和 Agentic RAG 在四个指标上的平均得分差异。,calculation,hard,calculator,C4,需调用计算器进行指标均值计算和对比
+Q017,分析 agentic_rag_knowledge_crawler.py 爬虫脚本，说明它使用了哪几种数据获取方式（API/Fetcher/git），并各举一例。,code_execution,hard,code_runner,C4,需阅读代码；包含 arXiv API、Scrapling Fetcher、urllib 三种方式
+Q018,在 agentic_rag_knowledge_crawler.py 中找出 save 函数的参数和功能，分析保存文件时记录了哪些元信息。,code_execution,medium,code_runner,C4,需阅读并分析代码中的 save 函数
+Q019,根据 rag_eval_results.csv 中的评测数据，若不考虑 Agentic RAG 和 Tool-Augmented RAG（C3/C4），仅看 C0-C2 三种方案，哪个指标的提升幅度最大？,calculation,hard,calculator,C4,需提取数据并进行差值计算和比较
+Q020,根据现有资料，能否判断 Agentic RAG 在所有知识服务任务上都优于普通 RAG？请说明判断依据和理由。,insufficient_evidence,hard,none,C3,现有资料中缺乏全面的对比实验数据

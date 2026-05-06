@@ -31,7 +31,7 @@ def test_retrieve_rerank_none_truncates_pool(monkeypatch):
         lambda texts, **_: [[0.0, 0.0, 1.0, 0.0]],
     )
 
-    hits, usage = local_rag.retrieve_with_index(
+    hits, usage, ark_usage = local_rag.retrieve_with_index(
         _four_chunk_index(),
         ["gamma"],
         top_k=2,
@@ -40,6 +40,7 @@ def test_retrieve_rerank_none_truncates_pool(monkeypatch):
         rerank_pool_size=4,
     )
     assert usage == {}
+    assert isinstance(ark_usage, dict)
     assert len(hits) == 2
     assert hits[0].chunk_id.endswith("chunk_0002")
 

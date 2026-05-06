@@ -8,6 +8,7 @@ from typing import Any
 
 from agentic_rag import config
 from agentic_rag.llm.deepseek import create_deepseek_client
+from agentic_rag.llm.usage_strict import require_deepseek_chat_usage
 from agentic_rag.schemas import EvidenceChunk
 
 
@@ -127,6 +128,7 @@ def rerank_hits(
             )
 
     usage = _usage_to_dict(getattr(resp, "usage", None))
+    require_deepseek_chat_usage(usage, where="检索重排（rerank）")
     return out[:top_k], usage
 
 

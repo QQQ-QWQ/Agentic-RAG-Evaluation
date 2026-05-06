@@ -8,12 +8,14 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from agentic_rag import config
 from agentic_rag.ark.embeddings import embed_texts
 from agentic_rag.documents import parse_path
 from agentic_rag.logging_utils import append_run_log
 from agentic_rag.llm.deepseek import create_deepseek_client
+from agentic_rag.llm.usage_strict import require_deepseek_chat_usage
 from agentic_rag.rewrite import build_retrieval_queries, rewrite_query
 from agentic_rag.schemas import EvidenceChunk, RewriteResult
 from agentic_rag.rag.bm25 import BM25Index, chinese_bigram_tokenize
@@ -165,7 +167,7 @@ def retrieve_with_index(
     rerank: bool = False,
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
-) -> tuple[list[EvidenceChunk], dict[str, int]]:
+) -> tuple[list[EvidenceChunk], dict[str, int], dict[str, Any]]:
     """
     检索：默认 **混合检索**（稠密余弦 + BM25），两路分数分别 min-max 归一化后按权重加权求和。
 
@@ -173,10 +175,12 @@ def retrieve_with_index(
     设为 ``hybrid=False`` 则退化为纯向量检索。
 
     ``rerank=True`` 时先在 ``rerank_pool_size`` 规模的粗检候选上调用 ``rerank_hits``（见 ``rerank_backend``），
-    再保留 ``top_k``；返回的第二项为各子查询重排 token 用量之和。
+    再保留 ``top_k``；返回的第二项为各子查询重排 token 用量之和；
+    第三项为火山方舟 **embedding** 调用累计 usage（须由接口返回，不做估算）。
     """
     hit_groups: list[list[EvidenceChunk]] = []
     rerank_usage_total: dict[str, int] = {}
+    ark_usage_acc: dict[str, int] = {}
     doc_id = str(getattr(index, "doc_id", "doc_001"))
     source = str(getattr(index, "source", ""))
     chunk_metadata = getattr(index, "chunk_metadata", None)
@@ -185,7 +189,11 @@ def retrieve_with_index(
         query_text = query.strip()
         if not query_text:
             continue
-        qv = embed_texts([query_text], is_query=True)[0]
+        qv = embed_texts(
+            [query_text],
+            is_query=True,
+            usage_out=ark_usage_acc,
+        )[0]
         dense_scores = [
             cosine_sim(qv, vector) for vector in index.vectors
         ]
@@ -245,7 +253,12 @@ def retrieve_with_index(
             pool = scored[:top_k]
         hit_groups.append(pool)
     merged = _merge_hits(hit_groups, top_k=top_k)
-    return merged, rerank_usage_total
+    ark_bundle: dict[str, Any] = {
+        "prompt_tokens": int(ark_usage_acc.get("prompt_tokens") or 0),
+        "completion_tokens": int(ark_usage_acc.get("completion_tokens") or 0),
+        "total_tokens": int(ark_usage_acc.get("total_tokens") or 0),
+    }
+    return merged, rerank_usage_total, ark_bundle
 
 
 def _usage_to_dict(usage) -> dict[str, int]:
@@ -285,7 +298,9 @@ def generate_answer_from_hits(
         ],
     )
     answer = (resp.choices[0].message.content or "").strip()
-    return answer, _usage_to_dict(getattr(resp, "usage", None))
+    usage = _usage_to_dict(getattr(resp, "usage", None))
+    require_deepseek_chat_usage(usage, where="答案生成")
+    return answer, usage
 
 
 def build_citations(hits: list[EvidenceChunk]) -> list[dict[str, str]]:
@@ -315,8 +330,9 @@ def run_c0_with_index(
     answer = ""
     answer_usage: dict[str, int] = {}
     rerank_usage: dict[str, int] = {}
+    ark_embedding_usage: dict[str, Any] = {}
     try:
-        hits, rerank_usage = retrieve_with_index(
+        hits, rerank_usage, ark_embedding_usage = retrieve_with_index(
             index,
             [question],
             top_k=top_k,
@@ -352,6 +368,7 @@ def run_c0_with_index(
         "citations": build_citations(hits),
         "latency_ms": latency_ms,
         "token_usage": {
+            "ark_volcengine_embedding": ark_embedding_usage,
             "rerank": rerank_usage,
             "answer_generation": answer_usage,
         },
@@ -394,10 +411,11 @@ def run_c1_with_index(
     answer = ""
     answer_usage: dict[str, int] = {}
     rerank_usage: dict[str, int] = {}
+    ark_embedding_usage = {}
     try:
         rewrite_result = rewrite_query(question, prompt_file=prompt_file)
         retrieval_queries = build_retrieval_queries(question, rewrite_result)
-        hits, rerank_usage = retrieve_with_index(
+        hits, rerank_usage, ark_embedding_usage = retrieve_with_index(
             index,
             retrieval_queries,
             top_k=top_k,
@@ -436,9 +454,11 @@ def run_c1_with_index(
         "retrieval_queries": retrieval_queries,
         "retrieved_chunks": [hit.to_dict() for hit in hits],
         "answer": answer,
+        "query_rewrite_model_raw": rewrite_result.raw_output,
         "citations": build_citations(hits),
         "latency_ms": latency_ms,
         "token_usage": {
+            "ark_volcengine_embedding": ark_embedding_usage,
             "query_rewrite": rewrite_result.token_usage,
             "rerank": rerank_usage,
             "answer_generation": answer_usage,

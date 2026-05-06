@@ -1,0 +1,67 @@
+config_name: c0_naive
+display_name: "C0 Naive RAG"
+description: "普通 RAG 基线：单轮检索 Top-K 证据，并基于证据生成带引用答案。"
+
+stage: "baseline"
+
+modules:
+  document_parse: true
+  chunking: true
+  vector_retrieval: true
+  bm25_retrieval: false
+  hybrid_retrieval: false
+  query_rewrite: false
+  rerank: false
+  task_planning: false
+  multi_round_retrieval: false
+  tool_calling: false
+  self_check: false
+
+retrieval:
+  chunk_size: 500
+  chunk_overlap: 80
+  top_k: 5
+  score_type: "cosine_similarity"
+
+generation:
+  answer_with_citations: true
+  refuse_without_evidence: true
+
+input_format:
+  question_id: "测试题编号，例如 Q001"
+  question: "用户输入问题"
+  doc_scope: "可选，指定检索的文档范围；为空则检索整个知识库"
+
+output_format:
+  question_id: "原 question_id"
+  config: "c0_naive"
+  top_k_evidence:
+    - chunk_id: "证据片段编号"
+      doc_id: "文档编号"
+      score: "检索分数"
+      text: "证据片段文本"
+  answer: "基于 Top-K 证据生成的答案"
+  citations:
+    - doc_id: "引用文档编号"
+      chunk_id: "引用片段编号"
+  log_path: "本次运行日志路径"
+
+logging:
+  save_jsonl: true
+  fields:
+    - run_id
+    - config
+    - question_id
+    - original_query
+    - retrieved_chunks
+    - answer
+    - citations
+    - latency_ms
+    - token_cost
+    - error
+
+evaluation_focus:
+  - Recall@5
+  - Answer Correctness
+  - Citation Accuracy
+  - Latency
