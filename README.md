@@ -2,120 +2,93 @@
 
 本项目对应 110 实验室课题四，研究面向学习与知识服务任务的 Agentic RAG 技术增强与评测。
 
-项目当前不是做一个完整的学习助手产品，而是搭建一个可复现实验工程：用同一知识库、同一测试集，对比 C0-C4 不同 RAG / Agentic RAG 配置，观察 query rewrite、混合检索、rerank、多轮检索、self-check 和工具调用等模块是否真的提升效果，以及带来多少延迟和 token 成本。
+项目当前不是做完整学习助手产品，而是搭建一个可复现实验工程：用同一知识库、同一测试集，对比 C0-C4 不同 RAG / Agentic RAG 配置，观察 query rewrite、混合检索、rerank、多轮检索、self-check 和工具调用等模块是否真的提升效果，以及带来多少延迟和 token 成本。
 
-## 当前版本
+## 当前阶段
 
-当前主线以远端 `origin/main` 为准：
+截至 2026-05-08，项目处于：
 
 ```text
-da41e53 feat: sync experiment pipeline, C2 ablation, and evaluation tooling
+C2 复现完成 + C0/C1 人工评测初稿完成 + 评测规范补齐阶段
 ```
 
-当前本地 `main` 已对齐 `origin/main`。基础检查通过：
+当前功能基线：
 
-```powershell
-uv run ruff check .
-uv run pytest
+```text
+fe74001 Add files via upload
 ```
 
-当前测试结果：
+基础检查：
 
 ```text
 ruff: All checks passed
 pytest: 23 passed
 ```
 
+当前重点不是继续堆功能，而是把 C0/C1/C2 的评测闭环做扎实：人工评分、引用可信度、失败案例、成本分析和适用边界。
+
 ## 当前进度
 
-截至 2026-05-07，项目已经完成：
+已经完成：
 
-- 项目目录、`uv` 环境、Git 协作规范和 docs 文档入口。
-- C0 Naive RAG：普通 RAG baseline，包含文档解析、切块、embedding、Top-K 检索和答案生成。
-- C1 Query Rewrite RAG：在 C0 基础上新增查询诊断、检索式改写、多候选 query 和保守改写判断。
-- C2 Advanced RAG：已接通混合检索、rerank、邻接上下文补全三阶段实验流程。
-- AI Judge 辅助评测模块：已实现 LLM-as-judge 答案打分入口，后续用于和人工评分对照。
-- 初版知识库登记表：`data/processed/documents.csv`，当前共 23 条文档记录。
-- 初版 chunk 文件：`data/processed/chunks.jsonl`，当前共 475 个 chunk。
-- 首批 20 条核心测试题：`data/testset/questions.csv` 和 `data/testset/references.csv`。
-- C0/C1 批量实验脚本：`run_batch_experiments.py`。
-- C2 三阶段消融脚本：`run_c2_retrieval_ablation.py`。
-- C2 答案自动评分脚本：`run_c2_ablation_answer_accuracy.py`、`run_score_answer_accuracy.py`。
-- C0/C1 冻结快照目录：`frozen_experiment_versions/`。
+- C0 Naive RAG：普通 RAG baseline，已完成 20 题批量实验。
+- C1 Query Rewrite RAG：已完成一次优化，已完成 20 题批量实验。
+- C2 Advanced RAG：已完成三阶段复现实验，包括 hybrid retrieval、rerank、context expansion。
+- AI Judge 辅助评测模块已接通，但只作为辅助，不替代人工评分。
+- 当前知识库包含 23 条文档记录、475 个 chunk、20 条核心测试题。
+- `references.csv` 的 20 条 `evidence_chunk_id` 已补齐，pending 数为 0。
+- `manual_eval_c0_c1.csv` 已建立，包含 40 行人工评分草稿，即 20 题 × C0/C1。
+- 已新增 `evaluation_plan.md`、`failure_cases.md`、`manual_eval_c0_c1_summary.md` 等评测说明文档。
 
-当前尚未完成：
+尚未完成：
 
-- `references.csv` 中前 20 题的 `evidence_chunk_id` 仍需补齐。
-- C0/C1 的人工 `Answer Correctness`、`Citation Accuracy` 评分尚未完成。
-- C2 三阶段结果需要在组长电脑复现，并结合人工评分复核。
+- C0/C1 人工评分仍需复核，当前还是草稿。
+- C2 三阶段还缺人工 `Answer Correctness` 和 `Citation Accuracy`。
+- 当前测试集只有 20 条，适合作为核心回归集，不足以支撑最终结论。
 - C3 的任务规划、多轮检索、self-check 尚未正式进入主线。
 - C4 的文件读取、代码执行、计算器、表格分析工具尚未正式进入主线。
-- 正式测试集仍需从 20 条扩展到 45-50 条，并补充 10-15 条公共 Benchmark 参考样例。
-- Dify / RAGFlow 横向参考对比尚未开始。
+- 公共 Benchmark 参考子集和 Dify / RAGFlow 横向参考对比尚未开始。
 
-## 阶段性实验结果
+## 实验结果摘要
 
-### C0/C1 批量实验
+当前实验均基于同一知识库和同一批 20 条核心测试题。
 
-最近一次 C0/C1 批量实验使用同一知识库和同一 20 条测试题。
+### C0/C1 文档级命中
 
-实验边界：
-
-- C0：普通 RAG，向量检索 + Top-K 证据 + 答案生成。
-- C1：只在 C0 基础上新增 query rewrite。
-- C1 不包含 BM25、hybrid retrieval、rerank、多轮检索、self-check 和工具调用。
-- README 中统一称为 C1；实验记录中为了区分优化前后，会把优化后一版写作 `C1-final`。
-
-结果摘要：
-
-| 配置 | 题数 | 错误数 | 预期文档命中 | 未命中题目 | 平均延迟 | 平均 token |
+| 配置 | 题数 | 错误数 | 文档级命中 | 未命中题目 | 平均延迟 | 平均 token |
 | --- | ---: | ---: | ---: | --- | ---: | ---: |
 | C0 Naive RAG | 20 | 0 | 17/20 | Q005、Q007、Q013 | 7382 ms | 962 |
 | C1 Query Rewrite RAG | 20 | 0 | 19/20 | Q013 | 37060 ms | 1905 |
 
-阶段性观察：
+### C0/C1 人工评分初稿
 
-- C1 相比 C0 在文档级命中上有提升，主要改善了模糊、口语化、非规范表达问题。
-- C1 的收益集中在 `fuzzy_query` 类型任务；对简单事实问答，提升不明显。
-- C1 的代价明显更高，平均延迟和 token 使用量均高于 C0。
-- Q013 仍然失败，说明单纯 query rewrite 不能解决所有问题；该问题更像是 chunk 排序、指定文件定位、hybrid retrieval 或 rerank 的问题，应交给 C2 分析。
+| 配置 | Answer Correctness | Citation Accuracy |
+| --- | ---: | ---: |
+| C0 Naive RAG | 0.525 | 0.650 |
+| C1 Query Rewrite RAG | 0.400 | 0.550 |
 
-注意：这里的“预期文档命中”只是文档级粗评估。`references.csv` 中的 `evidence_chunk_id` 还需要补齐，因此目前不能直接得出严格的 chunk 级 Recall、Citation Accuracy 或最终答案质量结论。
+当前人工评分仍是草稿，但已经显示一个重要现象：C1 虽然提升了文档级命中率，但没有稳定转化为更高的答案正确性和引用准确性。
 
-### C2 三阶段实验状态
+### C2 三阶段复现实验
 
-C2 当前已经接通三阶段流程：
+| 配置 | 题数 | 错误数 | 文档级命中 | 平均延迟 | 平均 token |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| C2 阶段 1：C1 + hybrid retrieval | 20 | 0 | 20/20 | 13659 ms | 2153 |
+| C2 阶段 2：C1 + hybrid retrieval + rerank | 20 | 0 | 20/20 | 21409 ms | 13488 |
+| C2 阶段 3：C1 + hybrid retrieval + rerank + context expansion | 20 | 0 | 20/20 | 18295 ms | 13644 |
 
-| 阶段 | 配置 | 作用 |
-| --- | --- | --- |
-| 阶段 1 | C1 + hybrid retrieval | 验证混合检索是否改善文档命中 |
-| 阶段 2 | C1 + hybrid retrieval + rerank | 验证 rerank 是否改善证据排序和答案质量 |
-| 阶段 3 | C1 + hybrid retrieval + rerank + context expansion | 验证邻接上下文补全是否改善答案生成 |
+注意：文档级命中只说明检索结果包含预期文档，不等于答案一定正确，也不等于引用一定可靠。C2 仍需补人工答案评分和引用评分。
 
-根据当前实验记录，C2 已有初步结果：
+## 阶段性结论
 
-| 阶段 | 文档级命中 | 初步观察 |
-| --- | ---: | --- |
-| 阶段 1 | 20/20 | 混合检索对文档级命中有明显帮助 |
-| 阶段 2 | 20/20 | rerank 可能改善答案质量，但 token 和延迟成本上升 |
-| 阶段 3 | 19/20 | 上下文补全不一定稳定提升，可能引入噪声 |
+当前可以得到以下阶段性判断：
 
-说明：
-
-- C2 结果需要继续复现和人工复核。
-- 文档级命中高不等于答案一定正确。
-- AI Judge 的打分只能作为辅助结果，最终结论必须经过人工评分确认。
-
-## 当前结论
-
-当前可以得到的阶段性结论：
-
-1. C0/C1 已经可以作为阶段性冻结基线，后续除明显 bug 外，不再继续修改 C1。
-2. Query rewrite 对模糊表达、口语化提问、语义不完整问题有效，但会显著增加延迟和 token 成本。
-3. 仅靠 query rewrite 不能解决 chunk 干扰、指定文件定位和排序问题，因此需要 C2 的 hybrid retrieval 与 rerank。
-4. C2 的混合检索和 rerank 已经具备进一步验证价值，但结论还不能只看文档命中率，必须结合人工答案评分和引用可信度。
-5. 当前 20 条测试题适合作为核心回归测试集，但不适合作为最终研究结论的唯一依据，后续需要扩充。
-6. AI Judge 模块可以提高批量评测效率，但不能代替人工评测；它更适合作为后续 self-check / 答案验证链路的参考模块。
+1. C1 提高了文档级命中，但不是稳定更强。人工评分初稿中，C1 的答案正确性和引用准确性低于 C0。
+2. Query rewrite 对模糊、口语化、非规范查询有帮助，但存在改写偏移风险，例如 Q005 出现了改写后答偏的问题。
+3. C1 的平均延迟和 token 成本明显高于 C0，后续不能默认所有问题都触发 query rewrite。
+4. C2 的 hybrid retrieval 对文档召回有效，本机复现中三阶段文档级命中均达到 20/20。
+5. Rerank 和 context expansion 是否真正改善答案质量，必须通过人工评分判断，不能只看命中率。
+6. 当前研究重点应从“模块能跑”转向“模块是否有效、何时有效、成本是否可接受”。
 
 ## 项目目录
 
@@ -132,14 +105,14 @@ tests/      基础测试
 重点文档：
 
 - `docs/README.md`：docs 目录导航。
-- `docs/environment_and_git_rules.md`：环境、uv、Git 分支和提交规范。
-- `docs/collaboration_workflow.md`：三人分工、同步方式和协作流程。
 - `docs/interface_and_logging_rules.md`：C0/C1/C2 输入输出结构和日志字段。
-- `docs/batch_experiment_guide.md`：C0/C1 批量实验怎么跑、怎么看结果。
-- `docs/c2_ablation_guide.md`：C2 三阶段消融实验怎么跑、怎么看结果。
-- `docs/evaluation_ai_judge.md`：AI Judge 模块定位、输出字段和使用边界。
+- `docs/batch_experiment_guide.md`：C0/C1 批量实验说明。
+- `docs/c2_ablation_guide.md`：C2 三阶段消融实验说明。
+- `docs/evaluation_plan.md`：人工评测流程和评分规则。
+- `docs/failure_cases.md`：典型失败案例。
+- `docs/manual_eval_c0_c1_summary.md`：C0/C1 人工评测摘要。
+- `docs/evaluation_ai_judge.md`：AI Judge 模块说明。
 - `docs/experiment_notes.md`：实验记录。
-- `docs/c0_baseline_architecture.md`：C0 baseline 架构说明。
 
 ## 环境准备
 
@@ -178,18 +151,6 @@ uv run ruff check .
 uv run pytest
 ```
 
-运行单文档 RAG：
-
-```powershell
-uv run python main.py rag "data/raw/learning_docs/python_basic_sample.md" "切片咋取中间几个元素？"
-```
-
-运行 C1 单文档 query rewrite demo：
-
-```powershell
-uv run python c1_rewrite_demo.py "data/raw/learning_docs/python_basic_sample.md" "切片咋取中间几个元素？"
-```
-
 运行 C0/C1 批量实验：
 
 ```powershell
@@ -212,14 +173,6 @@ uv run python run_c2_retrieval_ablation.py --phase all
 
 ## 实验输出
 
-C0/C1 批量实验输入：
-
-```text
-data/processed/documents.csv
-data/testset/questions.csv
-data/testset/references.csv
-```
-
 C0/C1 批量实验输出：
 
 ```text
@@ -227,7 +180,6 @@ runs/logs/c0_naive/run_logs.jsonl
 runs/results/c0_results.csv
 runs/logs/c1_rewrite/run_logs.jsonl
 runs/results/c1_results.csv
-data/processed/chunks.jsonl
 ```
 
 C2 三阶段实验输出：
@@ -238,9 +190,6 @@ runs/results/c2_stage2_c1_hybrid_rerank_results.csv
 runs/results/c2_stage3_c1_hybrid_rerank_context_results.csv
 runs/results/c2_ablation_summary.json
 runs/results/c2_ablation_report.md
-runs/logs/c2_stage1_c1_hybrid/run_logs.jsonl
-runs/logs/c2_stage2_c1_hybrid_rerank/run_logs.jsonl
-runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
 ```
 
 其中 `runs/logs/*` 和 `runs/results/*` 是本地实验输出，默认不提交到 GitHub。
@@ -251,7 +200,7 @@ runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
 | --- | --- | --- |
 | C0 | Naive RAG | 普通 RAG baseline：文档解析、切块、embedding、Top-K 检索、答案生成。 |
 | C1 | Query Rewrite RAG | 在 C0 基础上新增 query rewrite，包含查询诊断、检索式改写、多候选 query 和保守改写判断。 |
-| C2 | Advanced RAG | 在 C1 基础上验证 hybrid retrieval、rerank、context neighbor。 |
+| C2 | Advanced RAG | 在 C1 基础上验证 hybrid retrieval、rerank、context expansion。 |
 | C3 | Agentic Retrieval RAG | 后续新增任务规划、多轮检索和 self-check，不包含外部工具。 |
 | C4 | Tool-Augmented Agentic RAG | 后续新增文件读取、代码执行、计算器、表格分析工具。 |
 
@@ -259,30 +208,26 @@ runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
 
 ## 下一步工作
 
-当前最重要的不是继续堆功能，而是把 C0/C1/C2 的评测做扎实。
-
 优先级从高到低：
 
-1. 补齐 `references.csv` 中的 `evidence_chunk_id`，至少先完成前 20 条题的 gold chunk 标注。
-2. 人工检查 `runs/results/c0_results.csv` 和 `runs/results/c1_results.csv`，标注 Answer Correctness 和 Citation Accuracy。
-3. 在组长电脑复现 C2 三阶段实验，确认 C2 输出和李金航记录一致。
-4. 对 C2 三阶段结果做人评复核，重点判断 rerank 和上下文补全是否真的改善答案质量。
-5. 整理 Q005、Q007、Q013 等典型案例，说明 C1/C2 什么时候有效、什么时候收益有限。
-6. 新增或补全 `docs/evaluation_plan.md`，固定 Recall@5、Answer Correctness、Citation Accuracy、Latency、Token Usage 等指标的判定规则。
-7. 将测试集从 20 条扩展到 45-50 条，但扩充前先冻结当前 20 条核心回归集。
-8. 加入 10-15 条公共 Benchmark 参考样例，作为权威参照，不替代自建测试集。
-9. C2 验收稳定后，再进入 C3：任务规划、多轮检索和 self-check。
-10. C3 稳定后再进入 C4：文件读取、代码执行、计算器和表格分析工具。
+1. 复核 `manual_eval_c0_c1.csv`，确认 C0/C1 人工评分是否合理。
+2. 对 C2 三阶段建立 `manual_eval_c2.csv`，分别评分 Answer Correctness 和 Citation Accuracy。
+3. 汇总 C0/C1/C2 总表：文档命中、答案正确性、引用准确性、延迟、token。
+4. 整理 Q005、Q007、Q013、Q018 等典型案例，说明成功、失败和收益边界。
+5. 将当前 20 条测试题冻结为核心回归集。
+6. 后续扩展到 45-50 条自建任务，并补充 10-15 条公共 Benchmark 参考样例。
+7. C2 验收稳定后，再进入 C3：任务规划、多轮检索和 self-check。
+8. C3 稳定后，再进入 C4：文件读取、代码执行、计算器和表格分析工具调用。
 
 建议分工：
 
-- 赵启行：统筹进度、检查 PR、维护 README / 实验记录 / 评测规则，负责 C1/C2 结果分析和阶段冻结。
-- 唐宁：补 gold chunk、人工评分、整理失败案例和数据说明。
-- 李金航：复现并解释 C2 三阶段实验，维护 hybrid retrieval、rerank、context expansion 相关代码。
+- 赵启行：统筹阶段冻结、检查结论表述、推进 C2 验收和最终报告逻辑。
+- 唐宁：复核 C0/C1 人工评分，补充 C2 人工评分，维护失败案例。
+- 李金航：解释 C2 三阶段收益与成本，维护 hybrid retrieval、rerank、context expansion 相关代码。
 
 ## 协作注意事项
 
-- GitHub 仓库是唯一同步来源，不用微信传代码。
+- GitHub 仓库是唯一同步来源。
 - 每天开始工作前先 `git fetch` / `git pull`，确认自己基于最新远端。
 - 不要随意强推 `main`，不要用无关历史覆盖 `main`。
 - 新增依赖使用 `uv add`，不要各自随便 `pip install`。
