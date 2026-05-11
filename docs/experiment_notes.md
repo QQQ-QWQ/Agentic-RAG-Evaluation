@@ -111,10 +111,7 @@ self-check
 涉及文件：
 
 - `src/agentic_rag/`
-- `main.py`
-- `demo.py`
-- `rag_demo.py`
-- `upload_demo.py`
+- `main.py`（含 `demo` / `ui` 等子命令，`src/agentic_rag/cli/`）
 - `docs/c0_baseline_architecture.md`
 
 遗留问题：
@@ -140,7 +137,7 @@ self-check
   - `run_c1_with_index()`
   - `retrieve_with_index()`
   - `generate_answer_from_hits()`
-- 新增 `c1_rewrite_demo.py`，用于单文档 C1 技术演示。
+- 单文档 C1 演示：`uv run python main.py demo c1 <文档> <问题>`（逻辑在 `cli/demos.py`）。
 - 新增 `docs/interface_and_logging_rules.md`，固定 C0-C1 输入输出和日志规范。
 - 新增基础测试：
   - `tests/test_rewrite.py`
@@ -222,7 +219,7 @@ chunks: 2
 后续可运行命令：
 
 ```powershell
-uv run python c1_rewrite_demo.py "data/raw/learning_docs/python_basic_sample.md" "切片咋取中间几个元素？"
+uv run python main.py demo c1 "data/raw/learning_docs/python_basic_sample.md" "切片咋取中间几个元素？"
 ```
 
 注意：
@@ -241,7 +238,7 @@ uv run python c1_rewrite_demo.py "data/raw/learning_docs/python_basic_sample.md"
 运行命令：
 
 ```powershell
-uv run python c1_rewrite_demo.py "data/raw/learning_docs/python_basic_sample.md" "切片咋取中间几个元素？"
+uv run python main.py demo c1 "data/raw/learning_docs/python_basic_sample.md" "切片咋取中间几个元素？"
 ```
 
 输入数据：
@@ -625,7 +622,7 @@ uv run python run_c2_retrieval_ablation.py --phase all
 运行说明：
 
 - 本次使用脚本默认参数：`--limit 20`、`--top-k 5`、`--rerank-pool 20`、`--rerank-backend llm`、`--dense-weight 0.6`、`--bm25-weight 0.4`；阶段 3 邻接扩展 `--neighbors 1`。
-- 首次构建索引时对知识库全文切块并调用方舟 embedding；日志显示共 **475** 个文本块，已向量化并写入向量缓存 **`data/processed/.kb_embedding_cache.pkl`**（后续复跑可跳过长时间 embedding）。
+- 首次构建索引时对知识库全文切块并调用方舟 embedding；日志显示共 **475** 个文本块，已向量化并写入 **Chroma**（集合 `ragkb_kb_<指纹>`，`CHROMA_PERSIST_DIRECTORY`；后续复跑可跳过长时间 embedding）。
 - 三组实验依次执行，每组 20 题，日志与结果表按阶段分目录/分文件写出。
 
 输入数据：
@@ -735,6 +732,83 @@ prompts/answer_judge_prompt.md
 docs/interface_and_logging_rules.md（§8 AI 评判模块输出）
 ```
 
+## 2026-05-11 Agent 编排增强、全库检索默认化与知识库入库闭环
+
+记录人：李金航
+
+阶段：课题四工程能力补强 —— **新增多层级 Agent 编排**（新写调度与入口层）、全库 Chroma 对齐批量实验、交互与大段输入可用性、稳定性修复。
+
+### 背景与目标
+
+- **编排层（`orchestration/` + `main.py agent` 接线 + `deep_planning` 中除既有 RAG 工具封装外的调度逻辑）为重新实现**，不是仓库里历史就有的完整子系统；在「第一层规划 → 第二层 Deep Agent + RAG 工具 → 第三层研判」的**目标形态**上，**复用**既有能力：`experiment.run_document_rag` / 新增的 `run_knowledge_base_rag`、`kb_index_builder`、`RunProfile` 预设、Chroma、以及评测里 JSON 评判思路在编排侧的 **`kb_grounding`** 变体等。
+- 在上述新增编排上，明确三层职能边界（解析填槽 / 工具执行 / 调度裁决），并与评测侧 judge 思路对齐可选「检索摘录 vs 答复」核验。
+- 默认检索应与批量实验一致：**`data/processed/documents.csv` 定义的全库向量索引（Chroma）**；`data/testset/references.csv` 仍为**评测对照**，不充当向量库清单。
+- 支持用户增量文档登记并触发索引重建，便于「自然语言 + 路径」一类任务在第二层通过工具闭环。
+
+### 已完成（实现摘要）
+
+| 模块 | 内容 |
+|------|------|
+| `orchestration/*`、`deep_planning/agent_cli.py`、`deep_planning/agent_runner.py`（等与编排入口直接相关的部分） | **本次重写/新增**：调度循环、CLI、`OrchestrationConfig`、与 Deep Agents / LangGraph 的接线方式；**复用**下层 RAG 与工具工厂封装。 |
+| `experiment/runner.py` | 新增 `run_knowledge_base_rag`，与 `kb_index_builder.load_or_build_knowledge_index` 共用全库索引。 |
+| `experiment/kb_ingest.py` | `ingest_local_file_to_kb`：追加 `documents.csv`、复制至 `data/raw/user_docs/`（默认）、`force_rebuild` 写回 Chroma。 |
+| `cli/app.py` | 子命令 `main.py kb ingest …`（`--no-copy` / `--no-rebuild` 等）。 |
+| `deep_planning/tools_factory.py` | `topic4_rag_query` 默认全库；绑单文档时用 `run_document_rag`；工具 `topic4_kb_ingest`（路径须在工程根内）。可选 `sandbox_exec_python`（视 `SANDBOX_*`）。 |
+| `orchestration/*` | `kb_grounding`、`loop` 中可选对齐核验与研判串联；`OrchestrationConfig` 开关。 |
+| `config.py` | `PROJECT_ROOT`；`.env` 优先覆盖 shell 空变量；`DEEPSEEK_API_KEY` 可回退 `OPENAI_API_KEY`。 |
+| `orchestration/loop.py` + `agent_cli.py` | 交互默认**多行**：粘贴后以单独一行 `end`/`END` 提交；`--single-line` 恢复单行；`--once-file` / `--stdin` 适合整表 `questions.csv`。 |
+| `rag/chroma_store.py` | 对 Chroma 读写加 `RLock`，缓解 LangGraph 并发工具导致的 `Collection … does not exist`。 |
+| `session_planner.py` / `agent_runner.py` / `judge_layer.py` | 刷新系统提示词，固化三层 Skill 边界。 |
+| `.cursor/skills/topic4-orchestration-layers/SKILL.md` | 编排三层职能说明，供后续改提示词或协作对照。 |
+
+### 典型运行命令（无密钥示例）
+
+```powershell
+uv sync --group agent
+uv run python main.py kb ingest path\to\new_doc.md --title "备注标题"
+uv run python main.py agent --once-file data\testset\questions.csv
+```
+
+### 注意事项（实验口径）
+
+- **不得在本文档粘贴 API Key 或完整 `.env`。**
+- PowerShell 下 **`PS>` 直接粘贴 CSV 行会被当成脚本解析**；大段内容应通过 **`main.py agent` 启动后的多行模式**、或 **`--once-file`** / **`--stdin`** 传入 Python 进程。
+- 第三方警告：`langgraph` / LangChain 可能出现 `allowed_objects` 弃用提示，与本次逻辑无关时可暂缓处理。
+
+### 遗留 / 后续可选项
+
+- 图形化「问答界面」与 `main.py agent` 对接需单独 UI 工程；当前默认仍为终端交互。
+- Deep Agents 官方远端沙箱（Modal 等）未接入；本地沙箱为 subprocess + 临时目录。
+
+### 编排调试补充（同日会话整理）
+
+**现象与原因（非「进程死锁」为主）**
+
+- **`[index]` 打印后长时间无新标题**：每次工具调用 `topic4_rag_query` 都会进入 `load_or_build_knowledge_index`；命中 Chroma 时仍会先完成同步逻辑，随后还有检索、（部分管线）改写与生成等步骤；**默认无流式输出**，终端像在空转。
+- **第三层研判之后再度刷屏 `[index]`**：第三层若返回 `continue_execute`，编排会在**同一轮规划下再次** `invoke` 第二层 Deep Agent，大批量 CSV 任务会再次触发**大量** `topic4_rag_query`，表象为「研判结束后又卡一轮」。
+- **PowerShell / 终端偶发半截行、两行粘在一起**：高频 `print` 与长输出缓冲可能导致行尾混杂；与「索引逻辑错误」未必等价。
+- **知识库对齐核验 `grounded=false`**：表示「模型最终答复要点」与「工具返回的 evidence_excerpt」对齐不足，用于自检；不等同于编排调度失效。
+
+**已落地修改（代码）**
+
+- `orchestration/loop.py`：研判触发「继续执行」时，在下一次第二层调用前打印说明，避免误判卡死。
+- `experiment/kb_index_builder.py`：同一 Chroma 集合的缓存命中日志**同进程只打一次**；增加 **`_KB_INDEX_MEMORY`**，同一 fingerprint 的全库 `SimpleVectorIndex` **内存复用**，避免每次 RAG 重复从 Chroma 还原大块数据。
+- `deep_planning/agent_cli.py`：对 **`--once` / `--once-file` / `--stdin`** 单次注入，默认 **`max_orchestration_rounds=1`、`max_execute_retries_per_round=1`**，避免研判触发整轮重复执行；需要旧行为时加 **`--orchestrate-repeat`**，并可配合 `--max-rounds`、`--max-execute-retries`。
+- `main.py` 顶部用法说明中补充 `--orchestrate-repeat` 提示。
+
+**工作流提醒（题目文件 + 入库文件）**
+
+- **必须先入库再问答**：`uv run python main.py kb ingest <文件>` 完成清单与索引重建后，再 `uv run python main.py agent --once-file data\testset\questions.csv`（或交互里先 `topic4_kb_ingest` 再 `topic4_rag_query`）。顺序反了则首轮答题看不到新文档。
+
+**仍建议后续改进（未实现或仅部分缓解）**
+
+- 第二层 / 工具链：**可选流式输出或统一进度回调**（LangChain callback），长任务中心跳可观测。
+- 第三层研判：对「整表 CSV 一次性作答」类任务，提示词或策略上**倾向一次 `complete`**，减少无意义的 `continue_execute`（已通过 CLI 默认限制兜底）。
+- Windows 终端：必要时对关键 `print` 使用 **`flush=True`** 或集中日志，减少行交织观感。
+- **评测口径**：`kb_grounding` 与题库 rubric 不同；长答复 vs 单题摘录核验容易判 `grounded=false`，需在实验报告中区分「调度」与「引用覆盖」语义。
+
+---
+
 ## 当前待办
 
 优先级从高到低：
@@ -745,3 +819,4 @@ docs/interface_and_logging_rules.md（§8 AI 评判模块输出）
 4. 建立或补充 `docs/evaluation_plan.md`，明确 Recall@5、Answer Correctness、Citation Accuracy、Latency、Token Usage 的判定规则。
 5. 基于2026-05-06 的 C2 三阶段消融结果，整理阶段 1→2→3 的成本与检索命中对比，并补齐 **Q013** 等失败案例分析。
 6. 后续 C2 扩展实验也必须使用同一知识库、同一测试集，不能换题后再比较。
+7. Topic4 Agent：`--once-file` 大批量场景下若要进一步优化体验，评估接入 **流式输出 / 进度回调**；按需收紧第三层研判 Prompt 或结构化输出字段（减少冗长 `need_user_input` 式总结触发重复执行的语义噪声）。
