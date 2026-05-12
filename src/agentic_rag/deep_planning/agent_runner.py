@@ -23,7 +23,7 @@ def _ensure_keys() -> None:
             "并确认当前 shell 未 export 空的 DEEPSEEK_API_KEY。"
         )
         if not env_file.is_file():
-            hint += f" 若尚无文件，可复制 `.env.example` 为 `.env` 后填写。"
+            hint += " 若尚无文件，可复制 `.env.example` 为 `.env` 后填写。"
         raise ValueError(hint)
     if not config.ARK_API_KEY:
         raise ValueError(

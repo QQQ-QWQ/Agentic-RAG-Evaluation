@@ -42,6 +42,7 @@ from agentic_rag.experiment.c2_ablation_metrics import (  # noqa: E402
     row_extend_ablation,
     summarize_variant,
 )
+from agentic_rag.logging_utils import append_run_log  # noqa: E402
 from agentic_rag.pipelines.local_rag import run_c0_with_index, run_c1_with_index  # noqa: E402
 from agentic_rag.rag.simple import SimpleVectorIndex  # noqa: E402
 
@@ -159,7 +160,7 @@ def run_variant(
     rows_out: list[dict[str, Any]] = []
     common = {
         "top_k": top_k,
-        "log_dir": LOG_ROOT,
+        "log_dir": None,
         "hybrid": hybrid,
         "dense_weight": dense_weight,
         "bm25_weight": bm25_weight,
@@ -189,6 +190,7 @@ def run_variant(
             )
         patched = deepcopy(result)
         patched["config"] = variant_key
+        patched["log_path"] = append_run_log(patched, LOG_ROOT)
         ref = references.get(qid)
         base_row = result_to_row(patched, question_row, ref)
         row = row_extend_ablation(
@@ -197,7 +199,7 @@ def run_variant(
             hybrid=hybrid,
             use_rerank=use_rerank,
             context_neighbor_chunks=context_neighbor_chunks,
-            result=result,
+            result=patched,
             reference_row=ref,
         )
         rows_out.append(row)

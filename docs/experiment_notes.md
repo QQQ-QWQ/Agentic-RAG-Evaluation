@@ -820,3 +820,148 @@ uv run python main.py agent --once-file data\testset\questions.csv
 5. 基于2026-05-06 的 C2 三阶段消融结果，整理阶段 1→2→3 的成本与检索命中对比，并补齐 **Q013** 等失败案例分析。
 6. 后续 C2 扩展实验也必须使用同一知识库、同一测试集，不能换题后再比较。
 7. Topic4 Agent：`--once-file` 大批量场景下若要进一步优化体验，评估接入 **流式输出 / 进度回调**；按需收紧第三层研判 Prompt 或结构化输出字段（减少冗长 `need_user_input` 式总结触发重复执行的语义噪声）。
+
+---
+
+## 2026-05-13 C2 正式复现实验与日志修复
+
+记录人：赵启行
+
+阶段：C2 Advanced RAG 正式复现实验验收。
+
+### 一、背景
+
+此前 C2 三阶段实验已经能生成 CSV 结果，但 `runs/logs/c2_*` 下的 `run_logs.jsonl` 为空。排查后确认，问题不是 C2 没有运行，而是日志写入路径设计不正确：
+
+- C2 调用底层 `run_c1_with_index()` 时传入的是总日志目录 `runs/logs`。
+- 底层日志函数会根据当时的 `config` 字段写入日志，而当时 `config` 仍是 `c1_rewrite`。
+- C2 后续才把 `config` 改成 `c2_stage1_c1_hybrid` 等阶段名。
+- 因此 C2 专属日志目录被初始化清空，但实际逐题日志没有写到 C2 目录。
+
+### 二、修复内容
+
+本次修复采用最小改动，不改变 C2 检索、重排、上下文补全主逻辑。
+
+修复方式：
+
+1. C2 调用底层 C0/C1 管线时，先不让底层立即写日志。
+2. C2 在拿到结果后，将 `config` 改为当前 C2 阶段名。
+3. C2 再调用统一日志工具写入 `runs/logs/<c2_stage>/run_logs.jsonl`。
+4. CSV 中的 `log_path` 字段同步指向 C2 专属日志文件。
+
+涉及文件：
+
+```text
+run_c2_retrieval_ablation.py
+tests/test_c2_logging.py
+```
+
+同时修复两个非 C2 的 lint 问题：
+
+```text
+src/agentic_rag/deep_planning/agent_runner.py
+src/agentic_rag/orchestration/loop.py
+```
+
+### 三、验证结果
+
+基础检查：
+
+```text
+uv run ruff check .
+结果：All checks passed
+
+uv run pytest
+结果：24 passed
+```
+
+新增测试：
+
+```text
+tests/test_c2_logging.py
+```
+
+该测试验证：
+
+- C2 阶段日志写入 `runs/logs/<c2_stage>/run_logs.jsonl`。
+- 日志记录中的 `config` 是 C2 阶段名，而不是 `c1_rewrite`。
+- CSV 行中的 `log_path` 指向 C2 专属日志。
+
+### 四、C2 正式复现实验参数
+
+正式运行命令：
+
+```powershell
+uv run python run_c2_retrieval_ablation.py --phase all --limit 20 --neighbors 1
+```
+
+固定参数：
+
+```text
+phase=all
+limit=20
+use_query_rewrite=true
+top_k=5
+rerank_pool_size=20
+rerank_backend=llm
+dense_weight=0.6
+bm25_weight=0.4
+neighbors_stage3=1
+index_cache=enabled
+force_rebuild=false
+```
+
+说明：
+
+- 本次使用同一知识库、同一 20 条核心测试题、同一 C1 query rewrite 基础。
+- 使用本地 embedding cache，未强制重建索引。
+- 中途曾出现网络 `Connection error`，错误轮次已备份到本地 `archive/`，不作为正式结果。
+- 网络恢复后重新完整运行 C2 三阶段，并完成日志修复后的正式复现。
+
+### 五、C2 正式复现实验结果
+
+| 阶段 | 题数 | 错误 | 文档级命中 | Gold chunk 命中 | 平均延迟(ms) | 平均 token | 平均检索 query 数 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `c2_stage1_c1_hybrid` | 20 | 0 | 19/20 | 9/20 | 17719 | 2143 | 4.00 |
+| `c2_stage2_c1_hybrid_rerank` | 20 | 0 | 20/20 | 15/20 | 28761 | 12462 | 3.85 |
+| `c2_stage3_c1_hybrid_rerank_context` | 20 | 0 | 20/20 | 15/20 | 27887 | 14462 | 4.15 |
+
+日志校验：
+
+| 阶段 | CSV 行数 | CSV error | JSONL 日志行数 | 日志 config |
+| --- | ---: | ---: | ---: | --- |
+| `c2_stage1_c1_hybrid` | 20 | 0 | 20 | `c2_stage1_c1_hybrid` |
+| `c2_stage2_c1_hybrid_rerank` | 20 | 0 | 20 | `c2_stage2_c1_hybrid_rerank` |
+| `c2_stage3_c1_hybrid_rerank_context` | 20 | 0 | 20 | `c2_stage3_c1_hybrid_rerank_context` |
+
+输出文件：
+
+```text
+runs/results/c2_stage1_c1_hybrid_results.csv
+runs/results/c2_stage2_c1_hybrid_rerank_results.csv
+runs/results/c2_stage3_c1_hybrid_rerank_context_results.csv
+runs/results/c2_ablation_summary.json
+runs/results/c2_ablation_report.md
+runs/logs/c2_stage1_c1_hybrid/run_logs.jsonl
+runs/logs/c2_stage2_c1_hybrid_rerank/run_logs.jsonl
+runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
+```
+
+这些 `runs/` 下的文件属于本地实验输出，默认不提交到 GitHub。
+
+### 六、阶段性解释
+
+1. Stage1 只加入 hybrid retrieval 后，文档级命中为 19/20，Gold chunk 命中为 9/20，说明混合检索能改善召回，但还不能稳定命中精确证据块。
+2. Stage2 加入 LLM rerank 后，文档级命中提升到 20/20，Gold chunk 命中提升到 15/20，说明 rerank 对证据排序有明显帮助。
+3. Stage3 加入 context expansion 后，文档级命中和 Gold chunk 命中没有继续提升，平均 token 进一步增加，因此不能仅凭检索指标证明上下文补全有效。
+4. C2 的正式结论不能只看文档命中率，还必须补充人工 `Answer Correctness` 和 `Citation Accuracy`。
+5. AI Judge 只能作为辅助评测工具，最终结论以人工评分为准。
+
+### 七、下一步
+
+1. 唐宁建立 `data/testset/manual_eval_c2.csv`。
+2. 先完成 C2 Stage2 的 20 题人工评分。
+3. 再补 Q005、Q007、Q013、Q018 的三阶段横向对比。
+4. 赵启行汇总 C0/C1/C2 总表：文档命中、Gold chunk 命中、答案正确率、引用准确率、延迟、token。
+5. 李金航解释 C2 三阶段的技术收益、成本变化和失败案例。
+6. C2 人工验收完成后，再判断是否阶段性冻结 C2。

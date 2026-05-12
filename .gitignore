@@ -32,6 +32,7 @@ runs/figures/*
 data/processed/vector_index/*
 data/processed/*.pkl
 data/processed/.kb_embedding_cache.pkl
+archive/
 
 # Local-only guidance notes
 docs/member_b_data_evaluation_tasks.md
