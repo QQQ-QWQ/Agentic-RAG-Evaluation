@@ -26,6 +26,11 @@ from agentic_rag.deep_planning.session_planner import (
     run_layer1_session_plan,
 )
 from agentic_rag.orchestration.judge_layer import run_orchestration_judge
+from agentic_rag.orchestration.planning_extensions import (
+    PlanningEnrichInput,
+    format_query_rewrite_block,
+    kb_execution_notes_for_layer2,
+)
 from agentic_rag.orchestration.registry import OrchestrationHooks
 from agentic_rag.orchestration.types import OrchestrationConfig, JudgeVerdict
 
@@ -34,6 +39,7 @@ def _plan_digest(plan: SessionPlan) -> str:
     return (
         f"task_summary={plan.task_summary}\n"
         f"needs_retrieval_tools={plan.needs_retrieval_tools}\n"
+        f"kb_mutation_intent={plan.kb_mutation_intent}\n"
         f"suggested_pipelines={plan.suggested_pipelines}\n"
         f"plan_for_layer2={plan.plan_for_layer2}\n"
         f"reasoning_brief={plan.reasoning_brief}"
@@ -251,6 +257,7 @@ def _orchestrate_until_stable(
                 plan_for_layer2="（跳过第一层）按用户原文调用 Topic4 工具完成。",
                 reasoning_brief="skip_layer1",
                 raw={},
+                kb_mutation_intent="none",
             )
             print("（已跳过第一层）\n")
             _fire("on_plan", plan)
@@ -260,11 +267,43 @@ def _orchestrate_until_stable(
                 planning_input = (
                     f"{user_original}\n\n【编排系统·重规划上下文】\n{accumulated_context.strip()}"
                 )
+            planning_preamble_parts: list[str] = []
+            if cfg.enable_planning_query_rewrite and not skip_layer1:
+                from agentic_rag.rewrite import rewrite_query
+
+                qclip = planning_input.strip()[:12000]
+                pfile = cfg.planning_rewrite_prompt_file
+                if pfile is not None and not Path(pfile).is_file():
+                    pfile = None
+                try:
+                    rr = rewrite_query(qclip, prompt_file=pfile, temperature=0.0)
+                    planning_preamble_parts.append(format_query_rewrite_block(rr))
+                    print("[编排] 已在第一层前注入查询改写（C1 同源），供解析意图与路径。\n")
+                except Exception as exc:
+                    print(f"[编排] 查询改写失败，跳过该前置步骤：{exc}\n")
+            enrich_inp = PlanningEnrichInput(
+                user_natural_language=user_original,
+                cli_document_path=str(cli_doc) if cli_doc else None,
+                project_root=app_cfg.PROJECT_ROOT.resolve(),
+                orchestration_round=orch_round,
+            )
+            enricher = getattr(hk, "planning_context_enricher", None)
+            if callable(enricher):
+                try:
+                    extra = enricher(enrich_inp)
+                    if extra and str(extra).strip():
+                        planning_preamble_parts.append(str(extra).strip())
+                except Exception as exc:
+                    print(f"[编排] planning_context_enricher 失败：{exc}\n")
+            planning_preamble = (
+                "\n\n".join(planning_preamble_parts) if planning_preamble_parts else None
+            )
             plan = run_layer1_session_plan(
                 planning_input,
                 cli_document_path=str(cli_doc) if cli_doc else None,
                 prior_context=accumulated_context if orch_round > 1 else None,
                 temperature=cfg.planner_temperature,
+                planning_preamble=planning_preamble,
             )
             print()
             print(format_layer1_console(plan))
@@ -287,19 +326,38 @@ def _orchestrate_until_stable(
                         "未注册 sandbox_exec_python（可在 .env 设为 true）。\n"
                     )
             use_kb = doc_resolved is None
+            extra_agent_tools: list[Any] = []
+            ext_builder = getattr(hk, "extend_agent_tools", None)
+            if callable(ext_builder):
+                try:
+                    more = ext_builder()
+                    if more:
+                        extra_agent_tools.extend(list(more))
+                except Exception as exc:
+                    print(f"[编排] extend_agent_tools 失败：{exc}\n")
             agent = build_topic4_deep_agent(
                 doc_path=str(doc_resolved) if doc_resolved else None,
                 use_knowledge_base=use_kb,
                 temperature=temperature,
                 sandbox_workspace=sandbox_ws,
+                additional_tools=extra_agent_tools if extra_agent_tools else None,
             )
 
         exec_addon = accumulated_context if orch_round > 1 else None
+        kb_notes: str | None = None
+        if cfg.enable_kb_inventory_hints:
+            kb_notes = kb_execution_notes_for_layer2(
+                project_root=app_cfg.PROJECT_ROOT.resolve(),
+                doc_resolved=doc_resolved,
+                plan_document_path_str=plan.document_path,
+                kb_mutation_intent=plan.kb_mutation_intent,
+            )
         exec_msg = compose_layer2_user_message(
             user_original=user_original,
             plan=plan,
             orchestration_addon=exec_addon,
             use_knowledge_base=(doc_resolved is None),
+            kb_execution_notes=kb_notes,
         )
 
         verdict: JudgeVerdict | None = None

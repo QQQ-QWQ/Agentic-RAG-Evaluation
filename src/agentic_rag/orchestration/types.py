@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 VerdictCode = Literal["complete", "continue_execute", "replan", "need_user_input"]
@@ -26,6 +27,12 @@ class OrchestrationConfig:
     """参照评测 judge 思路：用检索摘录与模型答复做「有据」核验，供第三层参考。"""
     enable_sandbox_tools: bool = True
     """为 True 且 ``SANDBOX_ENABLED`` 时挂载 ``sandbox_exec_python``（会话临时目录）。"""
+    enable_planning_query_rewrite: bool = False
+    """为 True 时在第一层前调用与 C1 同源的 ``rewrite_query``，将检索导向摘要注入规划上下文（多一次 DeepSeek）。"""
+    planning_rewrite_prompt_file: Path | None = None
+    """改写提示词；默认 ``<PROJECT_ROOT>/prompts/query_rewrite_prompt.md``（由调用方解析）。"""
+    enable_kb_inventory_hints: bool = True
+    """为 True 时在第二层消息中附加 ``documents.csv`` 登记状态（确定性事实，非模型猜测）。"""
 
 
 @dataclass

@@ -20,6 +20,12 @@
 """
 
 from agentic_rag.orchestration.loop import run_cli_agent_session
+from agentic_rag.orchestration.planning_extensions import (
+    PlanningEnrichInput,
+    PlanningContextEnricher,
+    format_query_rewrite_block,
+    kb_execution_notes_for_layer2,
+)
 from agentic_rag.orchestration.registry import OrchestrationHooks
 from agentic_rag.orchestration.types import OrchestrationConfig, JudgeVerdict
 
@@ -27,5 +33,9 @@ __all__ = [
     "JudgeVerdict",
     "OrchestrationConfig",
     "OrchestrationHooks",
+    "PlanningContextEnricher",
+    "PlanningEnrichInput",
+    "format_query_rewrite_block",
+    "kb_execution_notes_for_layer2",
     "run_cli_agent_session",
 ]

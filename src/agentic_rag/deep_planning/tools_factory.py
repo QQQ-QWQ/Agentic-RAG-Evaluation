@@ -17,6 +17,7 @@ from agentic_rag import config as app_config
 from agentic_rag.deep_planning.presets import describe_presets, list_preset_ids, run_profile_for_preset
 from agentic_rag.experiment.kb_ingest import ingest_local_file_to_kb
 from agentic_rag.experiment.runner import run_document_rag, run_knowledge_base_rag
+from agentic_rag.tools.markitdown_tool import convert_local_file_to_markdown_safe
 
 
 def _chunks_to_evidence_excerpt(raw: dict[str, Any], *, max_chars: int) -> str:
@@ -86,7 +87,7 @@ def build_topic4_rag_tools(
     sandbox_workspace: Path | None = None,
 ) -> list[Any]:
     """
-    - ``topic4_list_rag_pipelines`` / ``topic4_rag_query``
+    - ``topic4_list_rag_pipelines`` / ``topic4_rag_query`` / ``topic4_kb_ingest`` / ``topic4_file_to_markdown``
     - 可选 ``sandbox_exec_python``（``SANDBOX_ENABLED`` 且传入 ``sandbox_workspace``）
 
     ``use_knowledge_base`` 未指定时：``doc_path is None`` → Chroma 全库，否则单文档。
@@ -158,10 +159,41 @@ def build_topic4_rag_tools(
         )
         return json.dumps(out, ensure_ascii=False, indent=2)
 
+    @tool
+    def topic4_file_to_markdown(file_path: str, max_output_chars: int = 120_000) -> str:
+        """将工程内文件转为 Markdown（Microsoft MarkItDown，见 https://github.com/microsoft/markitdown）。
+
+        适用于 PDF、Word、HTML、PPTX 等需统一转成可读 Markdown 再分析的场景；路径必须在工程根目录内。
+        与 ``topic4_rag_query`` 不同：本工具直接读磁盘文件内容，不查 Chroma。
+
+        Args:
+            file_path: 工程内相对或绝对路径。
+            max_output_chars: 返回正文最大字符数，防止上下文爆炸（默认 120000）。
+        """
+        root = Path(app_config.PROJECT_ROOT).resolve()
+        try:
+            cap = int(max_output_chars)
+        except (TypeError, ValueError):
+            cap = 120_000
+        cap = max(4_000, min(cap, 500_000))
+        res = convert_local_file_to_markdown_safe(
+            file_path,
+            project_root=root,
+            max_output_chars=cap,
+        )
+        payload: dict[str, Any] = {
+            "ok": res.error is None,
+            "source_path": res.source_path,
+            "markdown": res.text,
+            "error": res.error,
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
     tools: list[Any] = [
         topic4_list_rag_pipelines,
         topic4_rag_query,
         topic4_kb_ingest,
+        topic4_file_to_markdown,
     ]
 
     if sandbox_workspace is not None and app_config.SANDBOX_ENABLED:

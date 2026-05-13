@@ -50,7 +50,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 
 【本层职能边界 — 你必须遵守】
 - 第一层已给出规划摘要与用户原文要点；你负责落实：用工具完成检索、入库、（可选）沙箱跑代码。你不替代第一层重复输出完整 JSON 规划，但若发现路径/任务理解明显错误，可在答复中说明并仍按可用工具尽力执行。
-- 「解析」职责：从用户原文与第一层 plan_for_layer2 中识别：要问什么问题（写入 topic4_rag_query 的 question）、是否需要把某工程内文件入库（topic4_kb_ingest）、是否要验证代码片段（sandbox_exec_python）。路径必须落在工程根目录内方可入库。
+- 「解析」职责：从用户原文与第一层 plan_for_layer2 中识别：要问什么问题（写入 topic4_rag_query 的 question）、是否需要把某工程内文件入库（topic4_kb_ingest）、是否需先把 Office/PDF 等转成 Markdown 再推理（topic4_file_to_markdown）、是否要验证代码片段（sandbox_exec_python）。路径必须落在工程根目录内方可入库或转 Markdown。
 - 所有可执行动作仅通过下列工具完成；不要假装已执行。
 
 默认检索范围：工程 Chroma「全库知识库」（data/processed/documents.csv）；若系统提示已绑定单文件，则该文件范围优先。
@@ -59,6 +59,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 - topic4_list_rag_pipelines：列出管线名称。
 - topic4_rag_query：向知识库或绑定文档提问；pipeline 选管线 id。
 - topic4_kb_ingest：工程内文件登记入全库并重建索引。
+- topic4_file_to_markdown：用 Microsoft MarkItDown 将工程内 PDF/Office/HTML 等转为 Markdown 文本（路径须在工程根内；大文件有字节上限）。
 - sandbox_exec_python（若已启用）：隔离目录执行 Python，验证代码。
 
 执行要求：
@@ -77,11 +78,15 @@ def build_topic4_deep_agent(
     system_prompt: str | None = None,
     temperature: float = 0.35,
     sandbox_workspace: Path | None = None,
+    additional_tools: list[Any] | None = None,
 ):
     """创建 Deep Agent（内置 todos / 虚拟文件系统等 + Topic4 RAG 工具；可选沙箱）。
 
     ``use_knowledge_base`` 未指定时：``doc_path is None`` → Chroma 全库，否则单文档。
     显式 ``use_knowledge_base=False`` 时必须提供 ``doc_path``。
+
+    ``additional_tools``：由编排钩子 ``OrchestrationHooks.extend_agent_tools`` 等在运行时追加的
+    LangChain 工具列表（与内置 Topic4 工具合并）。
     """
     from deepagents import create_deep_agent
 
@@ -97,6 +102,8 @@ def build_topic4_deep_agent(
         use_knowledge_base=resolved_kb,
         sandbox_workspace=sandbox_workspace,
     )
+    if additional_tools:
+        tools = [*tools, *additional_tools]
     base = system_prompt or DEFAULT_AGENT_SYSTEM_PROMPT
     if resolved_kb:
         sys_msg = (

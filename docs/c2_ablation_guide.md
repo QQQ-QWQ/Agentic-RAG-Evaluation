@@ -4,7 +4,7 @@
 
 ## 向量索引缓存（避免长时间卡住）
 
-首次运行会对知识库全文切块并调用方舟 **embedding**，耗时取决于 chunk 数量与网络；成功后写入 **`data/processed/.kb_embedding_cache.pkl`**（已 `.gitignore`）。  
+首次运行会对知识库全文切块并调用方舟 **embedding**，耗时取决于 chunk 数量与网络；成功后写入 **Chroma**（集合 `ragkb_kb_<指纹>`，目录见环境变量 **`CHROMA_PERSIST_DIRECTORY`**）。  
 源文档与 `documents.csv` 未变化时，再次运行会 **跳过 embedding**，索引构建很快。
 
 - 强制重新 embedding：`--force-rebuild-index`

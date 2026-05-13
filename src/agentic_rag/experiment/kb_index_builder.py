@@ -1,8 +1,9 @@
 """
 知识库向量索引：构建切块并 embedding。
 
-首次运行会调用方舟 API，耗时较长；成功后写入 ``data/processed/.kb_embedding_cache.pkl``，
-在 ``documents.csv`` 与源文件指纹未变时可跳过 embedding，避免再次卡在批量向量请求上。
+向量持久化使用 **Chroma**（集合名由 ``kb_fingerprint`` 决定，前缀 ``ragkb_kb_``），与单文档 RAG 共用
+``CHROMA_PERSIST_DIRECTORY``。若检测到旧版 ``data/processed/.kb_embedding_cache.pkl`` 且指纹一致，
+会自动迁移到 Chroma 并删除该 pkl。
 """
 
 from __future__ import annotations
@@ -16,12 +17,22 @@ from typing import Any
 from agentic_rag import config
 from agentic_rag.ark.embeddings import embed_texts
 from agentic_rag.documents import parse_path
+from agentic_rag.rag.chroma_store import (
+    kb_collection_name,
+    persist_kb_index,
+    try_load_kb_index,
+)
 from agentic_rag.rag.simple import SimpleVectorIndex, chunk_text
 
 
 TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".csv", ".py"}
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 80
+
+# 同一进程内多次 topic4_rag_query 会重复加载索引；缓存命中日志只打一次，避免刷屏与终端混杂。
+_KB_CHROMA_HIT_PRINTED: set[str] = set()
+# 内存级缓存：同一 fingerprint 只从 Chroma 还原一次 SimpleVectorIndex，后续工具调用直接复用。
+_KB_INDEX_MEMORY: dict[str, SimpleVectorIndex] = {}
 
 
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
@@ -131,7 +142,7 @@ def collect_kb_chunks(
     return chunks, metadata
 
 
-def _cache_path(project_root: Path) -> Path:
+def _legacy_cache_path(project_root: Path) -> Path:
     return project_root / "data" / "processed" / ".kb_embedding_cache.pkl"
 
 
@@ -151,30 +162,65 @@ def load_or_build_knowledge_index(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
     )
-    cache_file = _cache_path(project_root)
 
-    if use_cache and not force_rebuild and cache_file.is_file():
+    if force_rebuild:
+        _KB_INDEX_MEMORY.pop(fp_expected, None)
+
+    if (
+        use_cache
+        and not force_rebuild
+        and fp_expected in _KB_INDEX_MEMORY
+    ):
+        mem = _KB_INDEX_MEMORY[fp_expected]
+        mem.doc_id = "knowledge_base"
+        mem.source = str(documents_csv)
+        return mem
+
+    if use_cache and not force_rebuild:
         try:
-            with cache_file.open("rb") as f:
-                blob = pickle.load(f)
-            if (
-                isinstance(blob, dict)
-                and blob.get("fingerprint") == fp_expected
-                and blob.get("chunks")
-                and blob.get("vectors")
-            ):
-                print(
-                    f"[index] 使用本地向量缓存（命中指纹 {fp_expected[:12]}…），跳过方舟 embedding。"
-                )
-                index = SimpleVectorIndex(
-                    chunks=blob["chunks"], vectors=blob["vectors"]
-                )
-                index.doc_id = "knowledge_base"
-                index.source = str(documents_csv)
-                index.chunk_metadata = blob.get("metadata") or []
-                return index
-        except (pickle.PickleError, OSError, KeyError) as exc:
-            print(f"[index] 缓存读取失败，将重新 embedding：{exc}")
+            cached = try_load_kb_index(fp_expected)
+            if cached is not None:
+                cached.doc_id = "knowledge_base"
+                cached.source = str(documents_csv)
+                coll = kb_collection_name(fp_expected)
+                if coll not in _KB_CHROMA_HIT_PRINTED:
+                    _KB_CHROMA_HIT_PRINTED.add(coll)
+                    print(f"[index] 使用 Chroma 知识库集合 `{coll}`，跳过 embedding。")
+                _KB_INDEX_MEMORY[fp_expected] = cached
+                return cached
+        except Exception as exc:
+            print(f"[index] Chroma 读取失败，将尝试旧缓存或重建：{exc}")
+
+        legacy = _legacy_cache_path(project_root)
+        if legacy.is_file():
+            try:
+                with legacy.open("rb") as f:
+                    blob = pickle.load(f)
+                if (
+                    isinstance(blob, dict)
+                    and blob.get("fingerprint") == fp_expected
+                    and blob.get("chunks")
+                    and blob.get("vectors")
+                ):
+                    index = SimpleVectorIndex(
+                        chunks=blob["chunks"], vectors=blob["vectors"]
+                    )
+                    index.doc_id = "knowledge_base"
+                    index.source = str(documents_csv)
+                    index.chunk_metadata = blob.get("metadata") or []
+                    persist_kb_index(fp_expected, index)
+                    print(
+                        f"[index] 已从旧版 .pkl 迁移至 Chroma：`{kb_collection_name(fp_expected)}`"
+                    )
+                    try:
+                        legacy.unlink()
+                        print("[index] 已删除旧版 .kb_embedding_cache.pkl")
+                    except OSError as exc:
+                        print(f"[WARN] 无法删除旧 pkl：{exc}")
+                    _KB_INDEX_MEMORY[fp_expected] = index
+                    return index
+            except (pickle.PickleError, OSError, KeyError, TypeError) as exc:
+                print(f"[index] 旧版 pkl 不可用：{exc}")
 
     print(
         "[index] 首次构建或无有效缓存：正在切块并调用方舟 embedding（chunk 多时可能需数分钟，请勿中断）…"
@@ -194,20 +240,13 @@ def load_or_build_knowledge_index(
     index.chunk_metadata = metadata
 
     try:
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        with cache_file.open("wb") as f:
-            pickle.dump(
-                {
-                    "fingerprint": fp_expected,
-                    "chunks": chunks,
-                    "vectors": vectors,
-                    "metadata": metadata,
-                },
-                f,
-                protocol=pickle.HIGHEST_PROTOCOL,
-            )
-        print(f"[index] 已写入向量缓存：{cache_file}")
-    except OSError as exc:
-        print(f"[WARN] 无法写入向量缓存（下次仍将全量 embedding）：{exc}")
+        persist_kb_index(fp_expected, index)
+        print(
+            f"[index] 已向量化并写入 Chroma：`{kb_collection_name(fp_expected)}` "
+            f"（持久化目录见 CHROMA_PERSIST_DIRECTORY）"
+        )
+    except Exception as exc:
+        print(f"[WARN] 无法写入 Chroma（下次仍将全量 embedding）：{exc}")
 
+    _KB_INDEX_MEMORY[fp_expected] = index
     return index

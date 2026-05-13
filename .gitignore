@@ -46,3 +46,6 @@ docs/member_b_data_evaluation_tasks.md
 
 # Internal topic documents
 docs/关于本課題/
+
+# 本地「接入模块」会话（可由 active_session.example.yaml 复制生成）
+configs/active_session.yaml

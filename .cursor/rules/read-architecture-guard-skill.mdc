@@ -1,0 +1,6 @@
+---
+description: 强制在实质性改动前加载仓库架构守卫 Skill
+alwaysApply: true
+---
+
+在本仓库进行实质性代码或结构调整前，必须阅读并遵循项目 Skill：`.cursor/skills/repo-architecture-guard/SKILL.md`（冗余审视、解耦、连通性、安全删除原则）。

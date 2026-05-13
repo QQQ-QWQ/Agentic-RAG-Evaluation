@@ -1,0 +1,24 @@
+# 复制为 active_session.yaml；或由 工作台[1] / main.py session init 生成。
+# 此为本地运行偏好（非大模型记忆）。
+# rag 合并顺序：内置默认 → 本文件 → ``-c`` YAML → CLI 开关。
+
+schema_version: 1
+description: "示例：运行偏好（与 RunProfile 一致）"
+
+use_chroma_cache: true
+use_hybrid_retrieval: true
+use_query_rewrite: true
+
+dense_weight: 0.6
+bm25_weight: 0.4
+bm25_tokenizer: bigram
+
+top_k: 5
+
+use_rerank: false
+rerank_backend: llm
+rerank_pool_size: 20
+context_neighbor_chunks: 0
+
+save_jsonl_log: false
+log_dir: runs/logs

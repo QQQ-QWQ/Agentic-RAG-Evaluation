@@ -12,10 +12,12 @@
 
 ## 2. 平均分
 
-| config | answer_correctness | citation_accuracy |
-| --- | ---: | ---: |
-| c0_naive | 0.525 | 0.65 |
-| c1_rewrite | 0.4 | 0.55 |
+
+| config     | answer_correctness | citation_accuracy |
+| ---------- | ------------------ | ----------------- |
+| c0_naive   | 0.525              | 0.65              |
+| c1_rewrite | 0.4                | 0.55              |
+
 
 ## 3. 简单结论
 
@@ -37,3 +39,4 @@
 - `C1` 不是稳定更强
 - `C1` 的主要代价是更慢、token 更多
 - 当前更值得优化的是检索后的整理能力、代码题阅读能力、以及减少改写带来的概念漂移
+

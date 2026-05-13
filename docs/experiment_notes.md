@@ -809,6 +809,80 @@ uv run python main.py agent --once-file data\testset\questions.csv
 
 ---
 
+## 2026-05-12 Agent 规划链增强、MarkItDown 读文件工具与编排扩展钩子
+
+记录人：李金航
+
+阶段：课题四 —— 规划层与第二层工具链补强（可扩展接口）、知识库登记事实注入、多格式文件转 Markdown；架构文档与 Skill 同步。
+
+### 背景与目标
+
+- 利用与 **C1 同源**的 `rewrite_query` 辅助第一层理解混杂自然语言中的检索意图（可选开关，多一次 DeepSeek 调用）。
+- 以 **`documents.csv` 为准**向第二层注入「单文件是否已登记」等**确定性**说明，避免模型臆测「是否已向量化」；与第一层 JSON 字段 **`kb_mutation_intent`**（`none` / `ingest_if_missing` / `ingest_force`）及 **`needs_retrieval_tools`** 对齐。
+- 接入 [Microsoft MarkItDown](https://github.com/microsoft/markitdown) 作为第二层工具 **`topic4_file_to_markdown`**（工程根内路径、字节上限、插件默认关闭），与既有 `documents.parse_path` 的 RAG 切块链**并行**，不替换默认解析。
+- 支持在创建第二层 Agent 时 **合并额外 LangChain 工具**（`OrchestrationHooks.extend_agent_tools` + `build_topic4_deep_agent(..., additional_tools=...)`），便于后续接 Cube/E2B 等远端沙箱或自研工具。
+- 在 `config.py` 中备忘 **CubeSandbox**（KVM MicroVM、兼容 E2B API）为可选强隔离方案，与本仓库本地 subprocess 沙箱**无自动对接**。
+
+### 已完成（实现摘要）
+
+| 模块 | 内容 |
+|------|------|
+| `experiment/kb_inventory.py` | `file_path_registered_in_documents_csv`、`relative_path_under_project`：清单比对（路径规范化）。 |
+| `orchestration/planning_extensions.py` | `PlanningEnrichInput`、`format_query_rewrite_block`、`kb_execution_notes_for_layer2`；与 `rewrite` / 清单逻辑解耦。 |
+| `orchestration/types.py` | `OrchestrationConfig`：`enable_planning_query_rewrite`、`planning_rewrite_prompt_file`、`enable_kb_inventory_hints`。 |
+| `orchestration/registry.py` | `OrchestrationHooks.extend_agent_tools`；保留 `planning_context_enricher`。 |
+| `orchestration/loop.py` | 第一层前可选改写注入与自定义 enricher；第二层消息附加 KB 登记备注；合并 `additional_tools`；移除未使用的 `sys` 导入。 |
+| `deep_planning/session_planner.py` | `SessionPlan.kb_mutation_intent`、`planning_preamble`；L1 提示词扩展；`compose_layer2_user_message` 支持 `kb_execution_notes` 与 `needs_retrieval_tools` 分流说明。 |
+| `deep_planning/agent_cli.py` | `--planning-rewrite`、`--planning-rewrite-prompt`、`--no-kb-inventory-hints`。 |
+| `deep_planning/agent_runner.py` | `build_topic4_deep_agent(..., additional_tools=...)`；系统提示补充 `topic4_file_to_markdown`。 |
+| `deep_planning/tools_factory.py` | 工具 **`topic4_file_to_markdown`**；`dependency-groups.agent` 增加 **markitdown** 等传递依赖。 |
+| `tools/markitdown_tool.py`、`tools/__init__.py` | MarkItDown 封装与安全边界（`MARKITDOWN_MAX_FILE_BYTES`）。 |
+| `config.py` | `MARKITDOWN_MAX_FILE_BYTES`；CubeSandbox 运维备忘注释。 |
+| `orchestration/__init__.py` | 导出 `PlanningEnrichInput`、`PlanningContextEnricher`、`format_query_rewrite_block`、`kb_execution_notes_for_layer2`。 |
+| `.cursor/skills/topic4-orchestration-layers/SKILL.md` | 第二层工具表、`extend_agent_tools`、Skill 必要性说明。 |
+| `docs/ARCHITECTURE.md` | §2.4 `tools/` 实装说明；§2.9 工具表与依赖组；§2.11 沙箱/MarkItDown/Cube 备忘；§5 修订记录。 |
+| `tests/test_kb_inventory.py`、`tests/test_markitdown_tool.py` | 清单与 MarkItDown 封装单测。 |
+
+### 典型命令（节选）
+
+```powershell
+uv sync --group agent
+uv run python main.py agent --planning-rewrite
+uv run python main.py agent --planning-rewrite --planning-rewrite-prompt prompts\query_rewrite_prompt.md
+uv run python main.py agent --no-kb-inventory-hints
+```
+
+### 注意事项
+
+- **MarkItDown** 部分格式可能需额外可选依赖（官方文档）；当前工具内 `enable_plugins=False`，复杂 Office 若失败应在实验记录中注明环境与依赖版本。
+- **CubeSandbox** 需独立 Linux/KVM 部署；内存与规格以官方 README 为准，本仓库不内置客户端。
+- **extend_agent_tools**：在每次**重建**第二层 Agent 时调用；若需每轮动态换表，需在编排策略上显式重建 Agent 或扩展钩子语义。
+
+### 本次新增/涉及文件（路径清单）
+
+```text
+src/agentic_rag/experiment/kb_inventory.py
+src/agentic_rag/orchestration/planning_extensions.py
+src/agentic_rag/orchestration/types.py
+src/agentic_rag/orchestration/registry.py
+src/agentic_rag/orchestration/loop.py
+src/agentic_rag/orchestration/__init__.py
+src/agentic_rag/deep_planning/session_planner.py
+src/agentic_rag/deep_planning/agent_cli.py
+src/agentic_rag/deep_planning/agent_runner.py
+src/agentic_rag/deep_planning/tools_factory.py
+src/agentic_rag/tools/__init__.py
+src/agentic_rag/tools/markitdown_tool.py
+src/agentic_rag/config.py
+pyproject.toml / uv.lock（agent 组含 markitdown）
+.cursor/skills/topic4-orchestration-layers/SKILL.md
+docs/ARCHITECTURE.md
+tests/test_kb_inventory.py
+tests/test_markitdown_tool.py
+```
+
+---
+
 ## 当前待办
 
 优先级从高到低：

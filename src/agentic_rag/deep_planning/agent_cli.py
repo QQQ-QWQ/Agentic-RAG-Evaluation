@@ -63,7 +63,12 @@ def cmd_agent(args: argparse.Namespace) -> None:
         orchestrate_follow_ups=bool(getattr(args, "full_each_turn", False)),
         enable_kb_grounding_judge=not getattr(args, "no_kb_grounding", False),
         enable_sandbox_tools=not getattr(args, "no_sandbox", False),
+        enable_planning_query_rewrite=bool(getattr(args, "planning_rewrite", False)),
+        enable_kb_inventory_hints=not getattr(args, "no_kb_inventory_hints", False),
     )
+    pf = getattr(args, "planning_rewrite_prompt", None)
+    if pf:
+        cfg.planning_rewrite_prompt_file = Path(str(pf).strip().strip('"')).expanduser().resolve()
 
     run_cli_agent_session(
         cli_doc=_resolve_cli_doc(getattr(args, "doc_path", None)),
@@ -161,6 +166,22 @@ def build_agent_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
         "--no-sandbox",
         action="store_true",
         help="不请求挂载 sandbox_exec_python（仍需 SANDBOX_ENABLED=true 才真正注册）",
+    )
+    p.add_argument(
+        "--planning-rewrite",
+        action="store_true",
+        help="第一层前先跑 C1 同源 query 改写，辅助识别检索意图（多一次 DeepSeek 调用）",
+    )
+    p.add_argument(
+        "--planning-rewrite-prompt",
+        metavar="PATH",
+        default=None,
+        help="改写提示词文件路径；默认 prompts/query_rewrite_prompt.md",
+    )
+    p.add_argument(
+        "--no-kb-inventory-hints",
+        action="store_true",
+        help="不向第二层注入 documents.csv 登记状态备注（默认会注入，便于区分是否已入库）",
     )
     p.add_argument("--json", action="store_true", help="--once 模式下附加 messages 调试 JSON")
     return p

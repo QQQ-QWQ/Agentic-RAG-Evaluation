@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -211,8 +212,11 @@ def score_one_csv(
     return scored_rows, summary
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="C2 三阶段答案正确率 + 检索口径汇总")
+def build_c2_accuracy_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        add_help=add_help,
+        description="C2 三阶段答案正确率 + 检索口径汇总",
+    )
     parser.add_argument("--questions", type=Path, default=QUESTIONS_CSV)
     parser.add_argument("--references", type=Path, default=REFERENCES_CSV)
     parser.add_argument("--prompt", type=Path, default=PROMPT_PATH)
@@ -221,8 +225,10 @@ def main() -> None:
         action="store_true",
         help="不调用 API，仅读取已存在的 *_scored.csv 做汇总",
     )
-    args = parser.parse_args()
+    return parser
 
+
+def run_c2_ablation_accuracy_from_args(args: argparse.Namespace) -> None:
     questions_by_id = {
         r.get("question_id", ""): r.get("question", "")
         for r in read_csv_rows(args.questions)
@@ -311,6 +317,11 @@ def main() -> None:
 
     print(f"[done] {out_json}")
     print(f"[done] {out_md}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_c2_accuracy_parser().parse_args(argv if argv is not None else sys.argv[1:])
+    run_c2_ablation_accuracy_from_args(args)
 
 
 if __name__ == "__main__":

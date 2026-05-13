@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -33,7 +35,7 @@ def build_knowledge_index(
     use_cache: bool = True,
     force_rebuild: bool = False,
 ) -> SimpleVectorIndex:
-    """构建共享知识库索引；默认使用 ``data/processed/.kb_embedding_cache.pkl`` 跳过重复 embedding。"""
+    """构建共享知识库索引；命中 Chroma 集合 ``ragkb_kb_*`` 时跳过重复 embedding。"""
     return load_or_build_knowledge_index(
         ROOT,
         documents_csv=documents_csv,
@@ -240,10 +242,26 @@ def run_config(
     return rows
 
 
-def main() -> None:
+def build_batch_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        add_help=add_help,
+        description="C0/C1 批量评测（同一知识库索引 + questions.csv 前 N 条）",
+    )
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        metavar="N",
+        help="评测题目数量上限（默认 20）",
+    )
+    return p
+
+
+def run_batch_from_limit(limit: int) -> None:
     print("[index] building shared knowledge index")
     index = build_knowledge_index()
-    questions = read_csv_rows(QUESTIONS_CSV)[:20]
+    n = max(1, limit)
+    questions = read_csv_rows(QUESTIONS_CSV)[:n]
     references = {
         row.get("question_id", ""): row for row in read_csv_rows(REFERENCES_CSV)
     }
@@ -259,6 +277,11 @@ def main() -> None:
     print(f"- {RESULT_ROOT / 'c0_results.csv'}")
     print(f"- {LOG_ROOT / 'c1_rewrite' / 'run_logs.jsonl'}")
     print(f"- {RESULT_ROOT / 'c1_results.csv'}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_batch_parser().parse_args(argv if argv is not None else sys.argv[1:])
+    run_batch_from_limit(args.limit)
 
 
 if __name__ == "__main__":

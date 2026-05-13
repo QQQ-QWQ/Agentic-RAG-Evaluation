@@ -16,6 +16,8 @@ from typing import Any
 class OrchestrationHooks:
     """编排生命周期回调（均可选）。"""
 
+    planning_context_enricher: Callable[[Any], str | None] | None = None
+    """接收 ``PlanningEnrichInput``（见 ``planning_extensions``），返回附加到第一层用户消息前的文本。"""
     on_plan: Callable[[Any], None] | None = None
     """接收 ``SessionPlan``。"""
     on_execute_state: Callable[[dict[str, Any]], None] | None = None
@@ -24,5 +26,5 @@ class OrchestrationHooks:
     """接收 ``JudgeVerdict``。"""
     on_round_start: Callable[[int], None] | None = None
     """外层编排轮次从 1 开始。"""
-
-
+    extend_agent_tools: Callable[[], list[Any]] | None = None
+    """返回若干 LangChain 工具，在创建第二层 Agent 时与内置 Topic4 工具合并（每创建一次 Agent 调用一次）。"""

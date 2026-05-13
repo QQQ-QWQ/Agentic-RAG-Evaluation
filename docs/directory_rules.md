@@ -111,7 +111,7 @@ data/raw/web_snapshot_optional/
 | `prompts.py` | 读取和管理 Prompt |
 | `evaluate.py` | 计算指标 |
 | `run_experiment.py` | 批量跑 C0-C4 |
-| `demo.py` | Gradio Demo |
+| （入口统一 `main.py`，勿再拆 Gradio 独立脚本） | 见 `src/agentic_rag/cli/demos.py` |
 | `utils.py` | 通用工具函数 |
 
 规则：
@@ -141,6 +141,8 @@ c4_no_tool.yaml
 c5_open_source_reference.yaml
 c4_adaptive_optional.yaml
 ```
+
+**档位（C0–C4）与源码归属、YAML 与 `RunProfile` 是否一致**：见 [experiment_stage_and_code_ownership.md](experiment_stage_and_code_ownership.md)。
 
 规则：
 

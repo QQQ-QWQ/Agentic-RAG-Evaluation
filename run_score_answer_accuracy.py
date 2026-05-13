@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +31,11 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> 
             w.writerow({k: row.get(k, "") for k in fieldnames})
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
+def build_score_answer_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        add_help=add_help,
+        description="单份结果 CSV → LLM 评判 → *_scored.csv",
+    )
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--questions", type=Path, default=QUESTIONS_CSV)
     parser.add_argument("--references", type=Path, default=REFERENCES_CSV)
@@ -39,8 +43,10 @@ def main() -> None:
     parser.add_argument("--prompt", type=Path, default=DEFAULT_PROMPT)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--include-errors", action="store_true")
-    args = parser.parse_args()
+    return parser
 
+
+def run_score_answer_from_args(args: argparse.Namespace) -> None:
     questions_by_id = {
         r.get("question_id", ""): r.get("question", "")
         for r in read_csv_rows(args.questions)
@@ -114,6 +120,11 @@ def main() -> None:
     out_path = args.out or (args.results.parent / f"{args.results.stem}_scored.csv")
     write_csv(out_path, fieldnames, scored_rows)
     print(f"[done] {out_path}")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_score_answer_parser().parse_args(argv if argv is not None else sys.argv[1:])
+    run_score_answer_from_args(args)
 
 
 if __name__ == "__main__":

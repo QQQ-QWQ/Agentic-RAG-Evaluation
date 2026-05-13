@@ -31,9 +31,9 @@ def _cached_bm25_index(
     tokenize: Callable[[str], list[str]],
 ) -> BM25Index:
     """同一索引缓存 BM25，避免每条检索查询重复建树。"""
-    tag = getattr(tokenize, "__name__", repr(tokenize))
-    cur = getattr(index, "_bm25_tokenize_tag", None)
-    cached = getattr(index, "_bm25_index_cached", None)
+    tag = getattr(tokenize, "__name__", repr(tokenize))#获取tokenize的名称或repr(tokenize)
+    cur = getattr(index, "_bm25_tokenize_tag", None)#获取index的_bm25_tokenize_tag属性
+    cached = getattr(index, "_bm25_index_cached", None)#获取index的_bm25_index_cached属性
     if cached is None or cur != tag:
         index._bm25_index_cached = BM25Index(index.chunks, tokenize=tokenize)
         index._bm25_tokenize_tag = tag
@@ -51,14 +51,14 @@ def build_vector_index(
     ``use_chroma=True``（默认）：Chroma 命中则加载；新建后持久化。
     ``use_chroma=False``：不读写磁盘（便于对照或调试）。
     """
-    path = Path(doc_path).expanduser().resolve()
+    path = Path(doc_path).expanduser().resolve()#将doc_path转换为绝对路径
     if use_chroma:
         cached = try_load_index(path)
         if cached is not None:
             return cached
 
     doc = parse_path(path)
-    chunks = chunk_text(doc.text)
+    chunks = chunk_text(doc.text)#将doc.text切块
     if not chunks:
         raise ValueError("文档解析后无文本，无法建索引")
     vectors = embed_texts(chunks, is_query=False)
@@ -113,7 +113,7 @@ def local_rag_answer(
     doc_path: str | Path,
     question: str,
     *,
-    top_k: int = 4,
+    top_k: int = 4,#检索结果数量
     system_prompt: str | None = None,
     use_chroma: bool = True,
 ) -> str:
@@ -180,7 +180,7 @@ def retrieve_with_index(
     """
     hit_groups: list[list[EvidenceChunk]] = []
     rerank_usage_total: dict[str, int] = {}
-    ark_usage_acc: dict[str, int] = {}
+    ark_usage_acc: dict[str, int] = {}#
     doc_id = str(getattr(index, "doc_id", "doc_001"))
     source = str(getattr(index, "source", ""))
     chunk_metadata = getattr(index, "chunk_metadata", None)

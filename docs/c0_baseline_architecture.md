@@ -12,7 +12,7 @@
 | 组成部分         | 说明                                                                                    |     |
 | ------------ | ------------------------------------------------------------------------------------- | --- |
 | **课题框架**     | `docs/`、`data/`、`runs/`、`prompts/`、`configs/`（占位）等目录与协作文档，对应 C0–C4 实验与评测预留位置。         |     |
-| **C0 可执行实现** | Python 包 `src/agentic_rag/` + 根目录 `main.py`、`demo.py`、`rag_demo.py`、`upload_demo.py`。 |     |
+| **C0 可执行实现** | Python 包 `src/agentic_rag/` + 根目录统一 CLI `main.py`（子命令含 `demo` / `ui` 等，逻辑在 `src/agentic_rag/cli/`）。 |     |
 | **工程元数据**    | `pyproject.toml` / `uv.lock`、`.python-version`（当前 **3.12**）、`LICENSE`、`.env.example`。 |     |
 
 
@@ -55,7 +55,7 @@ flowchart LR
 | **`documents` / `ark` / `rag` / `llm`** | 领域能力，互不依赖 `pipelines`。 |
 | **`pipelines`** | `build_vector_index`、`retrieve_with_index`、`run_c0_with_index`、`run_c1_with_index` 等编排。 |
 | **`experiment`** | `RunProfile`（模块开关）+ `run_document_rag`，供自动化与 JSON 输出。 |
-| **根目录 `main.py`** | 子命令 **`rag`**（接 `run_document_rag`）、**`chat`**（仅 DeepSeek）；无子命令时保持旧版「仅对话」。新 CLI 参数加在 ``main.py``，**不必为每个功能再复制一个 demo**。 |
+| **根目录 `main.py`** | 子命令 **`rag`** / **`chat`** / **`experiment`** / **`score`** / **`demo`** / **`ui`**；无子命令时保持「仅对话」。新能力挂子命令，**勿再增加根目录独立 demo 脚本**。 |
 | **`run_rag.py`** | 等价于 ``python main.py rag …``。 |
 
 ---
@@ -92,11 +92,8 @@ flowchart LR
 
 | 文件               | 是否走 RAG | 说明                                                         |
 | ---------------- | ------- | ---------------------------------------------------------- |
-| `main.py`        | 可选      | 子命令 **`rag`**：结构化 C0/C1 + `run_profile`；**`chat`**：仅 DeepSeek；无子命令时交互式仅对话（旧行为）。 |
+| `main.py`        | 可选      | **`rag`**：结构化 C0/C1 + `run_profile`；**`chat`**：仅 DeepSeek；**`demo interactive|once|c1`**、**`ui`**（Gradio）；无子命令时交互式仅对话。 |
 | `run_rag.py`     | 是       | 等价于 ``main.py rag``。                                      |
-| `demo.py`        | 是       | 一次 `build_vector_index`，循环 `answer_with_index`（文档不向量化第二遍）。 |
-| `rag_demo.py`    | 是       | 两参数：文档路径 + 问题；`local_rag_answer` 全链路。                      |
-| `upload_demo.py` | 是       | Gradio：`local_rag_answer`。                                 |
 
 
 ---
@@ -107,9 +104,8 @@ flowchart LR
 项目根/
 ├── main.py
 ├── run_rag.py
-├── demo.py
-├── rag_demo.py
-├── upload_demo.py
+├── run_batch_experiments.py
+├── run_c2_retrieval_ablation.py
 ├── pyproject.toml
 ├── uv.lock
 ├── .python-version          # 与 pyproject 一致，当前 3.12

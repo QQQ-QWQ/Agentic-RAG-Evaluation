@@ -67,7 +67,7 @@ flowchart LR
         ├── __init__.py
         ├── config.py
         ├── documents/
-        ├── tools/            # 可选：MarkItDown 等（未接入默认 parse）
+        ├── tools/            # MarkItDown 等；Agent 工具 topic4_file_to_markdown 已接入
         ├── ark/
         ├── llm/
         ├── rag/
@@ -105,8 +105,8 @@ flowchart LR
 
 | 路径 | 作用 |
 |------|------|
-| `tools/__init__.py` | 导出 MarkItDown 封装：`MarkdownConversionResult`、`convert_local_file_to_markdown`。 |
-| `tools/markitdown_tool.py` | 使用 **MarkItDown.convert_local** 将本地文件转为 Markdown；**尚未**接入 `documents.parse_path`，供后续 Agent 或增强解析路径按需调用。 |
+| `tools/__init__.py` | 导出 MarkItDown 封装：`MarkdownConversionResult`、`convert_local_file_to_markdown_safe`。 |
+| `tools/markitdown_tool.py` | 使用 [MarkItDown](https://github.com/microsoft/markitdown) 将**工程根内**本地文件转为 Markdown；由 Agent 工具 `topic4_file_to_markdown` 调用，与默认 `documents.parse_path`（RAG 切块）并行。 |
 
 ### 2.5 `ark/` — 火山方舟向量
 
@@ -146,8 +146,8 @@ flowchart LR
 | 路径 | 作用 |
 |------|------|
 | `deep_planning/session_planner.py` | **第一层**：DeepSeek 结构化规划（路径候选、任务摘要、`plan_for_layer2`、管线建议）；仅输出 JSON，不调工具。 |
-| `deep_planning/agent_runner.py` | `build_deepseek_chat_model`、`build_topic4_deep_agent`；第二层系统提示定义工具边界（RAG / 入库 / 可选沙箱）。 |
-| `deep_planning/tools_factory.py` | LangChain 工具：`topic4_rag_query`（默认走 `run_knowledge_base_rag`；绑单文档时 `run_document_rag`）、`topic4_kb_ingest`、`topic4_list_rag_pipelines`、可选 `sandbox_exec_python`。 |
+| `deep_planning/agent_runner.py` | `build_deepseek_chat_model`、`build_topic4_deep_agent`（支持 `additional_tools` 与钩子合并）；第二层系统提示定义工具边界（RAG / 入库 / MarkItDown / 可选沙箱）。 |
+| `deep_planning/tools_factory.py` | LangChain 工具：`topic4_rag_query`（默认走 `run_knowledge_base_rag`；绑单文档时 `run_document_rag`）、`topic4_kb_ingest`、`topic4_file_to_markdown`（MarkItDown）、`topic4_list_rag_pipelines`、可选 `sandbox_exec_python`；编排钩子 `OrchestrationHooks.extend_agent_tools` 可在创建 Agent 时追加更多工具。 |
 | `deep_planning/presets.py` | RAG 管线预设（`project_default`、`c0_naive`、C2 阶段等），与 `RunProfile` 对齐。 |
 | `deep_planning/agent_cli.py` | `main.py agent` 参数：`--once-file`、`--stdin`、`--single-line`（关闭默认多行）、OrchestrationConfig 开关等。 |
 | `orchestration/loop.py` | **调度循环**：规划 → 构建 Agent → 执行 → **可选**知识库对齐核验 → 第三层研判 → 重试/重规划；交互默认**多行输入**，单独一行 `END`/`end` 结束。 |
@@ -157,7 +157,7 @@ flowchart LR
 
 **检索范围约定**：未解析到有效单文件路径时，第二层默认 **Chroma 全库**（`data/processed/documents.csv`）；命令行传入文档路径则对该文件建索引检索。测试集 `data/testset/references.csv` 仅用于评测对照，**不是**向量库清单。
 
-**依赖组**：`agent` 功能需 `uv sync --group agent`（deepagents、langchain-openai）。
+**依赖组**：`agent` 功能需 `uv sync --group agent`（含 deepagents、langchain-openai、markitdown 等）。
 
 ### 2.10 `pipelines/` — 业务编排
 
@@ -170,7 +170,8 @@ flowchart LR
 
 - `PROJECT_ROOT`：与 `pyproject.toml` 同目录，用于全库路径、`kb_ingest`、Agent 工具路径校验。
 - `.env`：优先加载项目根 `.env`（`override=True`，避免 shell 中空变量挡住文件中的密钥）；父目录 `.env` 次之。`DEEPSEEK_API_KEY` 未设时可回退 `OPENAI_API_KEY`（兼容 `.env.example` 写法）。
-- 沙箱（可选）：`SANDBOX_ENABLED`、`SANDBOX_TIMEOUT_SEC`、`SANDBOX_MAX_CODE_CHARS`。
+- 沙箱（可选）：`SANDBOX_ENABLED`、`SANDBOX_TIMEOUT_SEC`、`SANDBOX_MAX_CODE_CHARS`（本地 subprocess + 临时目录，非 VM）。更强隔离可选自建 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox/blob/master/README_zh.md) 等兼容 E2B 的远端环境，与本仓库无自动对接。
+- MarkItDown 工具：`MARKITDOWN_MAX_FILE_BYTES`（单文件字节上限，防 OOM）。
 
 ---
 
@@ -225,4 +226,5 @@ flowchart LR
 
 | 日期 | 摘要 |
 |------|------|
+| 2026-05-12 | **规划链**：可选规划前 `rewrite_query`（`OrchestrationConfig` / CLI）、`planning_extensions`、第一层 `kb_mutation_intent` + 第二层 `documents.csv` 登记备注（`kb_inventory`）。**工具**：`src/agentic_rag/tools/` 实装 MarkItDown，`topic4_file_to_markdown`；`agent` 依赖组含 `markitdown`。**扩展**：`OrchestrationHooks.extend_agent_tools` 与 `build_topic4_deep_agent(..., additional_tools)`。**配置**：`MARKITDOWN_MAX_FILE_BYTES`；CubeSandbox 为备忘链接非内置对接。详见 `docs/experiment_notes.md` 同日条目（李金航）。 |
 | 2026-05-11 | 补充：`main.py agent` **新增编排层**（调度循环与 CLI；复用既有 RAG/全库构建）、`kb ingest`、全库 `run_knowledge_base_rag`、`chroma_store` 线程安全锁、`config` 与交互 CLI 约定；三层职能见 `.cursor/skills/topic4-orchestration-layers/SKILL.md`。实验细节见 `docs/experiment_notes.md` 同日条目（李金航）。 |

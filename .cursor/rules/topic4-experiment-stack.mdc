@@ -1,0 +1,39 @@
+---
+description: Topic4 RAG 评测仓库的技术栈与入口约定（批量实验、消融、CLI）
+alwaysApply: true
+---
+
+# Agentic-RAG-Evaluation 实验与入口约定
+
+## 技术栈（新功能测试必须沿用）
+
+- **向量持久化（统一 Chroma）**：单文档 RAG 与 **全库知识库**（`kb_index_builder.load_or_build_knowledge_index`）均将 embedding 写入 **`CHROMA_PERSIST_DIRECTORY`**；知识库集合名为 `ragkb_kb_<指纹>`。旧版 `data/processed/.kb_embedding_cache.pkl` 若存在会在首次加载时 **自动迁移到 Chroma** 后删除。运行时内存仍为 `SimpleVectorIndex`（检索为余弦 Top-K，不是每次 query 调 Chroma API）。
+- **向量**：火山方舟 embedding API；**生成 / 改写 / 重排 / 评判**：DeepSeek（配置见 `.env`）。
+- **消融脚本**：C2 使用 `run_c2_retrieval_ablation.py` 中的管线（混合检索 → rerank → context expansion），与 `configs/c2_advanced.yaml` 描述一致。
+
+## 入口与代码组织
+
+- **首选入口**：`uv run python main.py` / `main.py hub` → **集成工作台**（仅 **[1] 配置** + **[4] 单文档 RAG**；批量实验走命令行）。
+- **统一 CLI**：其余子命令实现位于 `src/agentic_rag/cli/app.py`；交互演示在 `src/agentic_rag/cli/demos.py`。
+- **新增能力**：优先在 `src/agentic_rag/` 实现 **纯函数或可调用接口**，再在 `cli/app.py` 增加子命令；**不要**在仓库根目录新增独立的 `run_*` / `*_demo.py`，除非仅为兼容而保留一行转发（不推荐）。
+- **消融 / 批量**：业务逻辑放在 `experiment/`、`pipelines/`、`rag/`；CLI 只做参数解析与调用。
+- **生成物**：`runs/logs/`、`runs/results/`、`*.pkl` 缓存已 `.gitignore`，本地清理可删除其中过期 JSONL/CSV，勿删 `README.md` 占位。
+
+## 运行偏好文件（非模型记忆）
+
+- `configs/active_session.yaml`：本地 **RunProfile** 持久化（Chroma / 混合检索 / 改写 / rerank / top_k 等），**不是**大模型对话记忆；由工作台 **[1]** 或 `session init` 生成（已 `.gitignore`）。
+- `rag` / 工作台 **[4]** 合并顺序：**内置默认 → active_session → `-c` YAML → CLI**。
+- **集成工作台**不再内置 C0/C1 批量等菜单；批量/消融/评判仍用：`main.py experiment …`、`score …`。
+
+## 常用命令对照
+
+| 目的 | 命令 |
+| --- | --- |
+| **集成工作台（推荐）** | `uv run python main.py` 或 `main.py hub` |
+| 交互配置接入模块（亦在工作台 [1]） | `uv run python main.py session init` |
+| C0/C1 批量 | `uv run python main.py experiment batch [--limit 20]` |
+| C2 三阶段消融 | `uv run python main.py experiment c2 [--phase all] ...` |
+| 单文件 AI 评判 | `uv run python main.py score answers --results <csv>` |
+| C2 三阶段评判汇总 | `uv run python main.py score c2-ablation` |
+
+根目录同名脚本若仍存在，行为应与上述一致（模块内 `main()` 可直接调用）。
