@@ -56,16 +56,24 @@ def cmd_agent(args: argparse.Namespace) -> None:
             "需要研判驱动的重复时请使用 --orchestrate-repeat（并可配合 --max-rounds / --max-execute-retries）。\n"
         )
 
+    enable_c4 = bool(getattr(args, "c4", False))
+    if getattr(args, "c3", False):
+        enable_c4 = False
     cfg = OrchestrationConfig(
         enable_judge=not getattr(args, "no_judge", False),
         max_orchestration_rounds=max_rounds,
         max_execute_retries_per_round=max_retries,
         orchestrate_follow_ups=bool(getattr(args, "full_each_turn", False)),
         enable_kb_grounding_judge=not getattr(args, "no_kb_grounding", False),
-        enable_sandbox_tools=not getattr(args, "no_sandbox", False),
+        enable_sandbox_tools=enable_c4 and not getattr(args, "no_sandbox", False),
         enable_planning_query_rewrite=bool(getattr(args, "planning_rewrite", False)),
         enable_kb_inventory_hints=not getattr(args, "no_kb_inventory_hints", False),
+        enable_c4_tools=enable_c4,
     )
+    if enable_c4:
+        print("[agent] 档位：C4 Tool-Augmented（含外部工具）\n")
+    else:
+        print("[agent] 档位：C3 Agentic Retrieval（仅检索工具，默认）\n")
     pf = getattr(args, "planning_rewrite_prompt", None)
     if pf:
         cfg.planning_rewrite_prompt_file = Path(str(pf).strip().strip('"')).expanduser().resolve()
@@ -184,6 +192,16 @@ def build_agent_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
         help="不向第二层注入 documents.csv 登记状态备注（默认会注入，便于区分是否已入库）",
     )
     p.add_argument("--json", action="store_true", help="--once 模式下附加 messages 调试 JSON")
+    p.add_argument(
+        "--c4",
+        action="store_true",
+        help="C4 工具增强（入库 / MarkItDown / 可选沙箱）；默认 C3 仅检索",
+    )
+    p.add_argument(
+        "--c3",
+        action="store_true",
+        help="显式 C3 仅检索（默认行为，与未指定 --c4 相同）",
+    )
     return p
 
 

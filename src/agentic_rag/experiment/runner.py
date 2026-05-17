@@ -65,6 +65,7 @@ def run_knowledge_base_rag(
     profile: RunProfile | None = None,
     *,
     project_root: Path | None = None,
+    allowed_doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     全库 RAG：使用 ``data/processed/documents.csv`` 切块索引，向量读写走 Chroma（与 kb_index_builder 一致）。
@@ -107,6 +108,15 @@ def run_knowledge_base_rag(
         "context_neighbor_chunks": p.context_neighbor_chunks,
     }
 
+    doc_filter: frozenset[str] | None = None
+    if allowed_doc_ids:
+        doc_filter = frozenset(str(x) for x in allowed_doc_ids if str(x).strip())
+        common_kwargs["allowed_doc_ids"] = doc_filter
+        print(
+            f"[rag] 知识库检索限定 doc_id：{', '.join(sorted(doc_filter))}",
+            flush=True,
+        )
+
     if p.use_query_rewrite:
         result = run_c1_with_index(
             index,
@@ -119,4 +129,6 @@ def run_knowledge_base_rag(
 
     result["run_profile"] = p.to_dict()
     result["config"] = "knowledge_base"
+    if doc_filter:
+        result["allowed_doc_ids"] = sorted(doc_filter)
     return result

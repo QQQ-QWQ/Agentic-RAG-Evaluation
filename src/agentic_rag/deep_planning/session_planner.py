@@ -179,6 +179,7 @@ def compose_layer2_user_message(
     orchestration_addon: str | None = None,
     use_knowledge_base: bool = True,
     kb_execution_notes: str | None = None,
+    enable_c4_tools: bool = True,
 ) -> str:
     """拼第二层 HumanMessage：嵌入第一层规划；可选附加编排系统备注（研判重试等）。"""
     pipes = ", ".join(plan.suggested_pipelines) if plan.suggested_pipelines else "(由你自选)"
@@ -193,12 +194,24 @@ def compose_layer2_user_message(
         if use_knowledge_base
         else "请严格基于已绑定单文档的检索结果作答，"
     )
-    tool_hint = (
-        "按需调用 topic4_list_rag_pipelines / topic4_rag_query；"
-        if plan.needs_retrieval_tools
-        else "第一层已标记 needs_retrieval_tools=false：不要仅为「答题」去调用 topic4_rag_query；"
-        "若 plan_for_layer2 仍要求检索则除外。"
-    )
+    if enable_c4_tools:
+        tool_hint = (
+            "按需调用 topic4_list_rag_pipelines / topic4_rag_query；"
+            if plan.needs_retrieval_tools
+            else "第一层已标记 needs_retrieval_tools=false：不要仅为「答题」去调用 topic4_rag_query；"
+            "若 plan_for_layer2 仍要求检索则除外。"
+        )
+        kb_tool_line = (
+            "若第一层 kb_mutation_intent 要求入库且系统备注允许，可调用 topic4_kb_ingest。\n"
+        )
+    else:
+        tool_hint = (
+            "【C3 模式】仅可使用 topic4_list_rag_pipelines / topic4_rag_query；"
+            "禁止调用入库、MarkItDown、沙箱（未注册）。"
+            if plan.needs_retrieval_tools
+            else "第一层已标记 needs_retrieval_tools=false：不要仅为「答题」去调用 topic4_rag_query。"
+        )
+        kb_tool_line = "【C3 模式】禁止 topic4_kb_ingest / topic4_file_to_markdown / sandbox。\n"
     return (
         "【第二层接入 · 第一层规划结果】\n"
         f"- 任务摘要：{plan.task_summary}\n"
@@ -211,8 +224,8 @@ def compose_layer2_user_message(
         "【用户原文】\n"
         f"{user_original.strip()}\n\n"
         f"{scope_hint}"
-        f"{tool_hint}"
-        "若第一层 kb_mutation_intent 要求入库且系统备注允许，可调用 topic4_kb_ingest。\n"
+        f"{tool_hint}\n"
+        f"{kb_tool_line}"
         + (
             f"\n【系统侧·知识库与入库（以 documents.csv 为准）】\n{kb_execution_notes.strip()}\n"
             if kb_execution_notes and kb_execution_notes.strip()

@@ -1,4 +1,4 @@
-"""文档解析：本地文件 → 纯文本。"""
+"""文档解析：本地文件 → 纯文本；多文档绑定见 ``multi_doc``。"""
 
 from agentic_rag.documents.errors import UnsupportedFormatError
 from agentic_rag.documents.models import ParsedDocument

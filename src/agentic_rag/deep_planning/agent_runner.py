@@ -70,15 +70,37 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 5. 验证代码优先 sandbox_exec_python；勿在主机任意执行未授权 shell。
 """
 
+DEFAULT_AGENT_SYSTEM_PROMPT_C3 = """\
+你是 Topic4【第二层：执行与工具编排】（当前为 **C3 Agentic Retrieval** 模式）。
+
+【本层职能边界 — 你必须遵守】
+- 第一层已给出规划摘要；你负责通过 **检索工具** 从知识库获取证据并作答。
+- 当前 **禁止** 调用入库、MarkItDown、沙箱等外部工具（本模式未注册这些工具）。
+- 所有可执行动作仅通过下列工具完成；不要假装已执行。
+
+默认检索范围：工程 Chroma 全库；若已绑定单文件，则该文件范围优先。
+
+可用工具：
+- topic4_list_rag_pipelines：列出 RAG 管线名称。
+- topic4_rag_query：向知识库或绑定文档提问；pipeline 建议从 c2_stage3_context 等较强管线选用。
+
+执行要求：
+1. 可配合 write_todos 拆解检索步骤。
+2. 禁止编造工具未返回的引用或片段。
+3. 最终中文答复简洁可读，并说明使用的 pipeline。
+"""
+
 
 def build_topic4_deep_agent(
     doc_path: str | Path | None = None,
     *,
     use_knowledge_base: bool | None = None,
+    kb_doc_ids: list[str] | None = None,
     system_prompt: str | None = None,
     temperature: float = 0.35,
     sandbox_workspace: Path | None = None,
     additional_tools: list[Any] | None = None,
+    enable_c4_tools: bool = True,
 ):
     """创建 Deep Agent（内置 todos / 虚拟文件系统等 + Topic4 RAG 工具；可选沙箱）。
 
@@ -92,7 +114,10 @@ def build_topic4_deep_agent(
 
     from agentic_rag.deep_planning.tools_factory import build_topic4_rag_tools
 
-    resolved_kb = doc_path is None if use_knowledge_base is None else use_knowledge_base
+    if kb_doc_ids:
+        resolved_kb = True
+    else:
+        resolved_kb = doc_path is None if use_knowledge_base is None else use_knowledge_base
     if not resolved_kb and doc_path is None:
         raise ValueError("单文档检索模式必须提供 doc_path")
 
@@ -100,16 +125,34 @@ def build_topic4_deep_agent(
     tools = build_topic4_rag_tools(
         doc_path,
         use_knowledge_base=resolved_kb,
-        sandbox_workspace=sandbox_workspace,
+        kb_doc_ids=kb_doc_ids,
+        sandbox_workspace=sandbox_workspace if enable_c4_tools else None,
+        enable_c4_tools=enable_c4_tools,
     )
     if additional_tools:
         tools = [*tools, *additional_tools]
-    base = system_prompt or DEFAULT_AGENT_SYSTEM_PROMPT
+    if system_prompt is not None:
+        base = system_prompt
+    elif enable_c4_tools:
+        base = DEFAULT_AGENT_SYSTEM_PROMPT
+    else:
+        base = DEFAULT_AGENT_SYSTEM_PROMPT_C3
     if resolved_kb:
-        sys_msg = (
-            base
-            + "\n\n【本会话检索范围】工程 Chroma 全库知识库（默认；与批量实验共用索引）。"
-        )
+        if kb_doc_ids:
+            ids = ", ".join(kb_doc_ids)
+            sys_msg = (
+                base
+                + "\n\n【本会话检索范围】Chroma 知识库子集（已持久化入库），"
+                f"仅 doc_id: {ids}。"
+                "调用 topic4_rag_query 后请核对返回 JSON 中的 "
+                "allowed_doc_ids / retrieved_doc_ids；若 retrieved_doc_ids "
+                "不在上述列表，再向用户说明检索异常。"
+            )
+        else:
+            sys_msg = (
+                base
+                + "\n\n【本会话检索范围】工程 Chroma 全库知识库（默认；与批量实验共用索引）。"
+            )
     else:
         assert doc_path is not None, "单文档模式必须提供 doc_path"
         bound = Path(doc_path).expanduser().resolve()

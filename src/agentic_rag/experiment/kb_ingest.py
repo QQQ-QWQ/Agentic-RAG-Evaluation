@@ -130,3 +130,53 @@ def ingest_local_file_to_kb(
         out["index"] = "rebuilt"
 
     return out
+
+
+def ingest_files_to_kb_batch(
+    project_root: Path,
+    source_files: list[Path],
+    *,
+    source_note: str = "批量入库",
+    copy_file: bool = True,
+) -> dict[str, Any]:
+    """
+    多文件入库：逐条写入 CSV，最后 **只重建一次** Chroma 全库索引（持久化）。
+    """
+    root = project_root.resolve()
+    results: list[dict[str, Any]] = []
+    doc_ids: list[str] = []
+
+    for src in source_files:
+        out = ingest_local_file_to_kb(
+            root,
+            src,
+            source_note=source_note,
+            copy_file=copy_file,
+            force_rebuild_index=False,
+        )
+        results.append(out)
+        if out.get("ok") and out.get("doc_id"):
+            doc_ids.append(str(out["doc_id"]))
+
+    if doc_ids:
+        from agentic_rag.experiment import kb_index_builder as _kb_mod
+
+        documents_csv = root / "data" / "processed" / "documents.csv"
+        chunks_jsonl = root / "data" / "processed" / "chunks.jsonl"
+        fp = _kb_mod.kb_fingerprint(documents_csv, root)
+        _kb_mod._KB_INDEX_MEMORY.pop(fp, None)
+        load_or_build_knowledge_index(
+            root,
+            documents_csv=documents_csv,
+            chunks_jsonl=chunks_jsonl,
+            use_cache=True,
+            force_rebuild=True,
+        )
+
+    return {
+        "ok": bool(doc_ids),
+        "doc_ids": doc_ids,
+        "count": len(doc_ids),
+        "results": results,
+        "index": "rebuilt" if doc_ids else "skipped",
+    }

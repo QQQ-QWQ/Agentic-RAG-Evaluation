@@ -20,6 +20,17 @@ from agentic_rag.experiment.runner import run_document_rag, run_knowledge_base_r
 from agentic_rag.tools.markitdown_tool import convert_local_file_to_markdown_safe
 
 
+def _retrieved_doc_ids(raw: dict[str, Any]) -> list[str]:
+    seen: list[str] = []
+    for ch in raw.get("retrieved_chunks") or []:
+        if not isinstance(ch, dict):
+            continue
+        did = str(ch.get("doc_id") or "").strip()
+        if did and did not in seen:
+            seen.append(did)
+    return seen
+
+
 def _chunks_to_evidence_excerpt(raw: dict[str, Any], *, max_chars: int) -> str:
     chunks = raw.get("retrieved_chunks") or []
     parts: list[str] = []
@@ -27,7 +38,8 @@ def _chunks_to_evidence_excerpt(raw: dict[str, Any], *, max_chars: int) -> str:
         if isinstance(ch, dict):
             t = (ch.get("text") or "").strip()
             cid = ch.get("chunk_id", "")
-            parts.append(f"[{i + 1} chunk_id={cid}]\n{t}")
+            did = ch.get("doc_id", "")
+            parts.append(f"[{i + 1} doc_id={did} chunk_id={cid}]\n{t}")
     s = "\n\n".join(parts)
     return s[:max_chars]
 
@@ -43,6 +55,8 @@ def _compact_rag_result(
     slim: dict[str, Any] = {
         "pipeline": pipeline,
         "config_flag": raw.get("config") or raw.get("run_profile", {}).get("config_name"),
+        "allowed_doc_ids": raw.get("allowed_doc_ids"),
+        "retrieved_doc_ids": _retrieved_doc_ids(raw),
         "answer": raw.get("answer", ""),
         "error": raw.get("error", ""),
         "latency_ms": raw.get("latency_ms"),
@@ -84,11 +98,13 @@ def build_topic4_rag_tools(
     doc_path: str | Path | None = None,
     *,
     use_knowledge_base: bool | None = None,
+    kb_doc_ids: list[str] | None = None,
     sandbox_workspace: Path | None = None,
+    enable_c4_tools: bool = True,
 ) -> list[Any]:
     """
-    - ``topic4_list_rag_pipelines`` / ``topic4_rag_query`` / ``topic4_kb_ingest`` / ``topic4_file_to_markdown``
-    - 可选 ``sandbox_exec_python``（``SANDBOX_ENABLED`` 且传入 ``sandbox_workspace``）
+    - C3（``enable_c4_tools=False``）：``topic4_list_rag_pipelines`` + ``topic4_rag_query``。
+    - C4（``enable_c4_tools=True``）：另含 ``topic4_kb_ingest``、``topic4_file_to_markdown``、可选 ``sandbox_exec_python``。
 
     ``use_knowledge_base`` 未指定时：``doc_path is None`` → Chroma 全库，否则单文档。
     """
@@ -122,7 +138,11 @@ def build_topic4_rag_tools(
         profile = run_profile_for_preset(pid)
         q = (question or "").strip()
         if use_kb:
-            out = run_knowledge_base_rag(q, profile)
+            out = run_knowledge_base_rag(
+                q,
+                profile,
+                allowed_doc_ids=kb_doc_ids if kb_doc_ids else None,
+            )
         else:
             assert path_str is not None
             out = run_document_rag(path_str, q, profile)
@@ -192,11 +212,15 @@ def build_topic4_rag_tools(
     tools: list[Any] = [
         topic4_list_rag_pipelines,
         topic4_rag_query,
-        topic4_kb_ingest,
-        topic4_file_to_markdown,
     ]
-
-    if sandbox_workspace is not None and app_config.SANDBOX_ENABLED:
-        tools.append(_sandbox_python_tool(sandbox_workspace))
+    if enable_c4_tools:
+        tools.extend(
+            [
+                topic4_kb_ingest,
+                topic4_file_to_markdown,
+            ]
+        )
+        if sandbox_workspace is not None and app_config.SANDBOX_ENABLED:
+            tools.append(_sandbox_python_tool(sandbox_workspace))
 
     return tools

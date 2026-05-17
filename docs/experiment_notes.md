@@ -883,6 +883,102 @@ tests/test_markitdown_tool.py
 
 ---
 
+## 2026-05-17 C3/C4 统一客户端、Agent Runtime、多文档入库与传入检查
+
+阶段：课题四 —— 产品化客户端与 Runtime 骨架；多文档 Chroma 子集检索；传入文件治理与审计日志。
+
+### 背景与目标
+
+- 提供 **`main.py client`** 统一入口（Gradio 默认 + `--console`），与 `main.py agent` **共用**三层编排内核，避免第三套推理路径。
+- 支持「开始会话」前绑定**多份本地文档**（含盘外路径复制到 `data/raw/user_docs/`），会话内按 **doc_id 子集**检索，而非只能全库。
+- 传入前展示**检查表**（文件名、绝对路径、SHA256 前缀、与库内重复关系）；**内容相同**时复用已有 doc_id，避免重复 CSV 行与无意义 `force_rebuild`。
+- 客户端操作写入 **`runs/logs/audit/global_audit.jsonl`**，不参与模型规划。
+- 抽取 **Agent Runtime**（`QueryEngine`、REPL、headless、governance），便于后续 MCP/无头批测扩展。
+
+### 已完成（实现摘要）
+
+| 模块 | 内容 |
+|------|------|
+| `cli/c34_client.py` | C3/C4 档位、`prepare_document_scope_from_input`、`run_c34_turn` → `QueryEngine`；Gradio 6 `role/content` 对话格式。 |
+| `documents/multi_doc.py` | 路径/自然语言解析、`SessionDocumentScope`、`build_session_document_scope`（含去重入库逻辑）。 |
+| `documents/ingest_inspector.py` | `inspect_document_paths`、`format_ingest_report_markdown`、`resolve_session_doc_ids`；`duplicate_content_in_kb` 默认复用 doc_id。 |
+| `experiment/runner.py` | `allowed_doc_ids` 过滤；终端 `[rag] 知识库检索限定 doc_id：…`。 |
+| `pipelines/local_rag.py` | 混合/稠密检索按 `allowed_doc_ids` 过滤 chunk。 |
+| `deep_planning/tools_factory.py` | 工具 JSON 增加 `allowed_doc_ids`、`retrieved_doc_ids`；`evidence_excerpt` 标注 `doc_id=`。 |
+| `deep_planning/agent_runner.py` | 绑定 doc_id 子集时提示核对 `retrieved_doc_ids`。 |
+| `orchestration/loop.py` | 传入 `kb_doc_ids`、`cli_documents_hint` 至 Agent 构建与 L2 消息。 |
+| `experiment/kb_ingest.py` | 批量入库后 `_KB_INDEX_MEMORY.pop(fp)`，避免陈旧内存索引。 |
+| `telemetry/audit_log.py`、`client_hooks.py` | 全局审计 JSONL + 编排层钩子。 |
+| `runtime/*` | `cli_router`、`QueryEngine`、`query_loop`、`governance`、REPL、headless、`AppState`/`effects`。 |
+| `tests/test_ingest_inspector.py` 等 | 传入检查、Runtime 相关单测。 |
+
+### 典型命令
+
+```powershell
+uv sync --group agent
+# Gradio：http://127.0.0.1:7860
+uv run python main.py client
+uv run python main.py client --console --c3
+uv run python main.py client --docs-text "data/raw/tech_docs/dify_readme.md"
+
+# Runtime REPL / 无头（与 client 共用 QueryEngine 包装）
+uv run python main.py runtime repl --c3
+uv run python main.py runtime headless --tasks data/testset/questions_headless_sample.txt --format json
+
+# 规划前查询改写（CLI 已支持；Gradio client 默认未开）
+uv run python main.py agent --c3 --planning-rewrite
+```
+
+### 已知问题与排查（客户端多文档）
+
+| 现象 | 原因 / 处理 |
+|------|-------------|
+| 检查表 `duplicate_content_in_kb` 仍新建 doc_028/029 | **已修复**：`resolve_session_doc_ids` 跳过重复入库，复用 doc_024 等；需重启 client 加载新代码。 |
+| Agent 称检索到 LangChain 官方文档 | 常为误判或全库泄漏；核对工具 JSON 的 `retrieved_doc_ids` 与终端 `[rag] 限定 doc_id`；学习指南正文亦含 LangChain 关键词。 |
+| `grounded=false` | 第三层 KB 对齐：答复与 `evidence_excerpt` 不一致；区分「调度失败」与「引用不足」。 |
+| 对话里无法发附件/网址 | **未实现**；盘外文件用「开始会话」路径框；网址需先爬取或保存为本地文件入库。 |
+
+### 指纹与重复入库（备忘）
+
+- `kb_fingerprint` = CSV 各行 **路径 mtime/size** + 切块/embedding 参数，**不是**文件内容 hash。
+- 同内容、不同路径 → 旧逻辑会新增 doc_id；现默认 **SHA256 相同则复用已有 doc_id**，不重建 Chroma。
+- 同路径文件修改 → mtime/size 变 → 指纹变 → 需 `force_rebuild`。
+
+### 文档同步
+
+- `docs/ARCHITECTURE.md` §2.10–2.14、§5 修订记录
+- `docs/agent_runtime_architecture.md` 完成度表与日志双线
+
+### 本次新增/涉及文件（路径清单）
+
+```text
+src/agentic_rag/cli/c34_client.py
+src/agentic_rag/documents/multi_doc.py
+src/agentic_rag/documents/ingest_inspector.py
+src/agentic_rag/telemetry/audit_log.py
+src/agentic_rag/telemetry/client_hooks.py
+src/agentic_rag/runtime/entrypoints/cli_router.py
+src/agentic_rag/runtime/engine/query_engine.py
+src/agentic_rag/runtime/engine/query_loop.py
+src/agentic_rag/runtime/tools/governance.py
+src/agentic_rag/runtime/interaction/repl.py
+src/agentic_rag/runtime/headless/runner.py
+src/agentic_rag/runtime/state/app_state.py
+src/agentic_rag/runtime/state/effects.py
+docs/ARCHITECTURE.md
+docs/agent_runtime_architecture.md
+tests/test_ingest_inspector.py
+tests/test_runtime_*.py
+```
+
+### 仍建议后续改进
+
+- Gradio 暴露「规划前查询改写」勾选项；对话区 **File 上传** 或 **URL 入库** 工具。
+- 编排 hooks 发射 `tool_start`/`tool_end` 结构化事件（非仅审计 JSONL）。
+- 清理 `documents.csv` 历史重复 doc_id（可选人工删行 + 一次 `force_rebuild`）。
+
+---
+
 ## 当前待办
 
 优先级从高到低：
@@ -894,6 +990,7 @@ tests/test_markitdown_tool.py
 5. 基于2026-05-06 的 C2 三阶段消融结果，整理阶段 1→2→3 的成本与检索命中对比，并补齐 **Q013** 等失败案例分析。
 6. 后续 C2 扩展实验也必须使用同一知识库、同一测试集，不能换题后再比较。
 7. Topic4 Agent：`--once-file` 大批量场景下若要进一步优化体验，评估接入 **流式输出 / 进度回调**；按需收紧第三层研判 Prompt 或结构化输出字段（减少冗长 `need_user_input` 式总结触发重复执行的语义噪声）。
+8. **C3/C4 客户端**（2026-05-17）：Gradio 对话内上传/URL 抓取、规划前改写 UI 开关；见上节「仍建议后续改进」。
 
 ---
 

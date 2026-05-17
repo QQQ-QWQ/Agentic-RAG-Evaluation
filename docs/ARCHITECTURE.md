@@ -37,8 +37,9 @@ flowchart LR
 | **`documents` / `ark` / `rag` / `llm`** | **领域能力**：解析、向量、索引、对话；**互不依赖** `pipelines`，便于单测与替换实现。 |
 | **`pipelines`** | **编排**：`build_vector_index`、`answer_with_index`、`local_rag_answer` 等，组合底层调用。 |
 | **`experiment`** | **运行快照**：`RunProfile`（开关组合）+ `run_document_rag`，把编排封装成**带参数的 JSON 友好出口**，供 CLI / 自动化使用。 |
-| **根目录 `main.py`** | **统一 CLI**：`hub`（工作台）、`chat`、`rag`、`agent`（多层级编排）、`kb ingest`（知识库入库）、`experiment` / `score` / `demo` / `ui`、`session`（运行偏好 YAML）；详见 README。`run_rag.py` 仅为 **`main.py rag` 的别名**。 |
-| **`src/agentic_rag/cli/`** | 子命令实现与演示函数（`app.py`、`demos.py`）；**新增入口不要新建根目录 `*_demo.py`**，在本目录接线后挂到 `main.py`。 |
+| **根目录 `main.py`** | **统一 CLI**：`hub`（工作台）、`chat`、`rag`、`agent`（多层级编排）、**`client`**（C3/C4 统一 Gradio/控制台）、`kb ingest`（知识库入库）、`experiment` / `score` / `demo` / `ui`、`session`（运行偏好 YAML）、**`runtime repl|headless`**（Agent Runtime 骨架）；详见 README。`run_rag.py` 仅为 **`main.py rag` 的别名**。 |
+| **`src/agentic_rag/cli/`** | 子命令实现与演示函数（`app.py`、`c34_client.py`、`demos.py`）；**新增入口不要新建根目录 `*_demo.py`**，在本目录接线后挂到 `main.py`。 |
+| **`src/agentic_rag/runtime/`** | **Agent Runtime 骨架**：`QueryEngine` 包装既有编排；REPL/headless 与 `main.py client` 共用推理路径（见 `docs/agent_runtime_architecture.md`）。 |
 
 扩展新功能时：**先在底层或 `pipelines` 实现函数接口** → **`cli/app.py` 注册子命令**（或扩展 `experiment/runner.py` / `RunProfile`）。需要「关掉某能力」时，用 Profile 布尔项或 CLI（如 `--no-chroma`）即可。
 
@@ -71,6 +72,11 @@ flowchart LR
         ├── ark/
         ├── llm/
         ├── rag/
+        ├── cli/                # app.py、c34_client.py（C3/C4 产品入口）
+        ├── runtime/            # QueryEngine、REPL、headless、tools/governance
+        ├── telemetry/          # 客户端审计 JSONL（不参与模型）
+        ├── orchestration/      # 规划→执行→研判调度循环
+        ├── deep_planning/      # L1 规划、L2 Agent、工具工厂
         ├── pipelines/
         └── experiment/       # RunProfile + run_document_rag（统一入口编排）
 ```
@@ -98,7 +104,9 @@ flowchart LR
 |------|------|
 | `documents/__init__.py` | 对外导出 `parse_path`、`ParsedDocument`、`UnsupportedFormatError`。 |
 | `documents/models.py` | `ParsedDocument` 数据结构（如路径、正文）。 |
-| `documents/parse.py` | 按扩展名解析 `.txt` / `.md` / `.pdf` / `.docx` → 纯文本。 |
+| `documents/parse.py` | 按扩展名解析 `.txt` / `.md` / `.pdf` / `.docx` → 纯文本（入库/RAG 默认链；**不支持**旧版 `.doc`）。 |
+| `documents/multi_doc.py` | 多文档路径解析（自然语言/列表）、`SessionDocumentScope`、`build_session_document_scope`（可选入库 Chroma）。 |
+| `documents/ingest_inspector.py` | **传入文件检查**（SHA256、重复路径/重复内容、`duplicate_content_in_kb`）；`resolve_session_doc_ids` 在内容重复时**复用已有 doc_id、跳过重复入库**。 |
 | `documents/errors.py` | `UnsupportedFormatError` 等解析侧异常。 |
 
 ### 2.4 `tools/` — 可插拔工具（与默认解析并行）
@@ -136,8 +144,8 @@ flowchart LR
 |------|------|
 | `experiment/profile.py` | `RunProfile`：本次运行开关（如 `use_chroma_cache`、`top_k`；预留混合检索、rewrite 等）。 |
 | `experiment/runner.py` | `run_document_rag`（单文档）；`run_knowledge_base_rag`（全库：`documents.csv` → `kb_index_builder.load_or_build_knowledge_index`，与批量实验共用 Chroma 索引）。 |
-| `experiment/kb_index_builder.py` | 全库切块、方舟 embedding、`chunks.jsonl` 维护；指纹变更则重建向量并写入 Chroma。 |
-| `experiment/kb_ingest.py` | 将用户文件登记入 `documents.csv`、复制至 `data/raw/user_docs/`（可选）、触发 `force_rebuild` 重建全库索引；供 CLI `main.py kb ingest` 与 Agent 工具 `topic4_kb_ingest` 调用。 |
+| `experiment/kb_index_builder.py` | 全库切块、方舟 embedding、`chunks.jsonl` 维护；`kb_fingerprint` 由 CSV 各行路径 **mtime/size** + 切块/embedding 参数计算（**非**内容 SHA256）；指纹不变可命中 Chroma；进程内 `_KB_INDEX_MEMORY` 复用 `SimpleVectorIndex`。 |
+| `experiment/kb_ingest.py` | 登记 `documents.csv`、复制至 `data/raw/user_docs/`（盘外路径）、`force_rebuild`；入库后清除对应指纹的 `_KB_INDEX_MEMORY`。供 `main.py kb ingest`、**`main.py client` 开始会话**、`topic4_kb_ingest`。 |
 
 ### 2.9 `deep_planning/` 与 `orchestration/` — `main.py agent` 多层级编排
 
@@ -147,26 +155,63 @@ flowchart LR
 |------|------|
 | `deep_planning/session_planner.py` | **第一层**：DeepSeek 结构化规划（路径候选、任务摘要、`plan_for_layer2`、管线建议）；仅输出 JSON，不调工具。 |
 | `deep_planning/agent_runner.py` | `build_deepseek_chat_model`、`build_topic4_deep_agent`（支持 `additional_tools` 与钩子合并）；第二层系统提示定义工具边界（RAG / 入库 / MarkItDown / 可选沙箱）。 |
-| `deep_planning/tools_factory.py` | LangChain 工具：`topic4_rag_query`（默认走 `run_knowledge_base_rag`；绑单文档时 `run_document_rag`）、`topic4_kb_ingest`、`topic4_file_to_markdown`（MarkItDown）、`topic4_list_rag_pipelines`、可选 `sandbox_exec_python`；编排钩子 `OrchestrationHooks.extend_agent_tools` 可在创建 Agent 时追加更多工具。 |
+| `deep_planning/tools_factory.py` | LangChain 工具：`topic4_rag_query`（支持 `allowed_doc_ids` 子集检索；返回 JSON 含 `allowed_doc_ids`、`retrieved_doc_ids`、带 `doc_id=` 的 `evidence_excerpt`）、`topic4_kb_ingest`、`topic4_file_to_markdown`、`topic4_list_rag_pipelines`、可选 `sandbox_exec_python`；`OrchestrationHooks.extend_agent_tools` 可追加工具。 |
 | `deep_planning/presets.py` | RAG 管线预设（`project_default`、`c0_naive`、C2 阶段等），与 `RunProfile` 对齐。 |
 | `deep_planning/agent_cli.py` | `main.py agent` 参数：`--once-file`、`--stdin`、`--single-line`（关闭默认多行）、OrchestrationConfig 开关等。 |
-| `orchestration/loop.py` | **调度循环**：规划 → 构建 Agent → 执行 → **可选**知识库对齐核验 → 第三层研判 → 重试/重规划；交互默认**多行输入**，单独一行 `END`/`end` 结束。 |
+| `orchestration/loop.py` | **调度循环**：规划 → 构建 Agent → 执行 → **可选**知识库对齐核验 → 第三层研判 → 重试/重规划；向 L2 传入 `kb_doc_ids`、`cli_documents_hint`；交互默认**多行输入**，单独一行 `END`/`end` 结束。 |
 | `orchestration/kb_grounding.py` | 检索摘录 vs 答复的对齐核验（DeepSeek JSON），供研判参考。 |
 | `orchestration/judge_layer.py` | **第三层**：达标与否与 `verdict`（complete / continue_execute / replan / need_user_input）。 |
 | `orchestration/types.py` | `OrchestrationConfig`、`JudgeVerdict` 等。 |
 
-**检索范围约定**：未解析到有效单文件路径时，第二层默认 **Chroma 全库**（`data/processed/documents.csv`）；命令行传入文档路径则对该文件建索引检索。测试集 `data/testset/references.csv` 仅用于评测对照，**不是**向量库清单。
+**检索范围约定**：未解析到有效单文件路径时，第二层默认 **Chroma 全库**（`data/processed/documents.csv`）；`main.py client` 在「开始会话」前绑定多文档时，会话内 `topic4_rag_query` 仅检索指定 **doc_id 子集**（`pipelines/local_rag.py` 与 `experiment/runner.py` 的 `allowed_doc_ids`）。测试集 `data/testset/references.csv` 仅用于评测对照，**不是**向量库清单。
 
 **依赖组**：`agent` 功能需 `uv sync --group agent`（含 deepagents、langchain-openai、markitdown 等）。
 
-### 2.10 `pipelines/` — 业务编排
+### 2.10 `cli/` — 统一命令行与 C3/C4 客户端
+
+| 路径 | 作用 |
+|------|------|
+| `cli/app.py` | `main.py` 子命令注册：`hub`、`rag`、`agent`、`client`、`kb`、`experiment`、`runtime` 等。 |
+| `cli/c34_client.py` | **Topic4 C3/C4 统一客户端**：Gradio（默认）或 `--console`；开始会话时解析多路径/自然语言 → `prepare_document_scope_from_input` → 可选入库；每轮对话经 **`QueryEngine.submit_message`** 走完整编排。 |
+| `cli/demos.py` | 旧版 `main.py ui`：单文件 Gradio 上传 + `local_rag_answer`（**无**三层编排）。 |
+
+**C3 vs C4（客户端）**：`OrchestrationConfig.enable_c4_tools`；C3 仅 `topic4_list_rag_pipelines` + `topic4_rag_query`；C4 另可 `topic4_kb_ingest`、`topic4_file_to_markdown`、可选 `sandbox_exec_python`（须 `SANDBOX_ENABLED`）。
+
+**客户端尚未支持**：对话区内**附件上传**、**URL 自动抓取**；盘外文件须在「开始会话」路径框登记（会复制到 `data/raw/user_docs/`），或由 C4 Agent 对**工程根内**路径调入库/MarkItDown 工具。
+
+**规划前查询改写**：`OrchestrationConfig.enable_planning_query_rewrite` 默认 **False**（Gradio 未暴露开关）；`main.py agent --planning-rewrite` 可开启。检索管线（如 `c2_stage3_context`）内的 C1 改写仍随 `RunProfile.use_query_rewrite` 生效。
+
+### 2.11 `runtime/` — Agent Runtime 骨架
+
+详见 **`docs/agent_runtime_architecture.md`**。
+
+| 路径 | 作用 |
+|------|------|
+| `runtime/entrypoints/cli_router.py` | `--version` fast-path；`runtime` 子命令与回落 `cli/app.py`。 |
+| `runtime/engine/query_engine.py` | 多轮 `submit_message`、复用 `agent` / `doc_resolved`。 |
+| `runtime/engine/query_loop.py` | 包装 `orchestrate_user_turn`，捕获 stdout 为 transcript。 |
+| `runtime/tools/governance.py` | 按 C3/C4 过滤工具名、装配 `tools_factory`。 |
+| `runtime/interaction/repl.py` | Runtime REPL（`/quit`、`/retry` 等）。 |
+| `runtime/headless/runner.py` | 无头批处理（`topic4.headless.v1` JSON）。 |
+| `runtime/state/` | `AppState`、`AppStateStore`、`effects.py`。 |
+
+### 2.12 `telemetry/` — 客户端审计（不参与模型）
+
+| 路径 | 作用 |
+|------|------|
+| `telemetry/audit_log.py` | 追加 `runs/logs/audit/global_audit.jsonl`（`ingest_inspect`、`session_start_*`、`client_turn_*`、layer1/2/3 钩子等）。 |
+| `telemetry/client_hooks.py` | `build_client_audit_hooks`：编排事件写入审计，**不**注入规划提示词。 |
+
+与批量实验线 **`runs/logs/<config>/run_logs.jsonl`**（`RunProfile.save_jsonl_log`）分离：客户端默认不写实验 JSONL。
+
+### 2.13 `pipelines/` — 业务编排
 
 | 路径 | 作用 |
 |------|------|
 | `pipelines/__init__.py` | 导出 `build_vector_index`、`answer_with_index`、`local_rag_answer`。 |
-| `pipelines/local_rag.py` | `build_vector_index`：解析 → 分块 → `embed_texts(is_query=False)`；`answer_with_index`：问题 `embed_texts(is_query=True)` → Top-K → DeepSeek；`local_rag_answer` 为一次性封装。 |
+| `pipelines/local_rag.py` | `build_vector_index`：解析 → 分块 → `embed_texts(is_query=False)`；检索支持 `allowed_doc_ids` 过滤；`answer_with_index` / `local_rag_answer` 为一次性封装。 |
 
-### 2.11 配置与密钥加载（`config.py`）
+### 2.14 配置与密钥加载（`config.py`）
 
 - `PROJECT_ROOT`：与 `pyproject.toml` 同目录，用于全库路径、`kb_ingest`、Agent 工具路径校验。
 - `.env`：优先加载项目根 `.env`（`override=True`，避免 shell 中空变量挡住文件中的密钥）；父目录 `.env` 次之。`DEEPSEEK_API_KEY` 未设时可回退 `OPENAI_API_KEY`（兼容 `.env.example` 写法）。
@@ -226,5 +271,6 @@ flowchart LR
 
 | 日期 | 摘要 |
 |------|------|
+| 2026-05-17 | **C3/C4 统一客户端**（`cli/c34_client.py`，`main.py client`）：Gradio/控制台、多文档路径与自然语言解析、会话 `doc_id` 子集检索。**传入检查**（`ingest_inspector`）：内容重复时复用 doc_id、不重复入库。**审计**（`telemetry/` → `runs/logs/audit/global_audit.jsonl`）。**Agent Runtime**（`runtime/` + `QueryEngine`）。**RAG 工具输出**增强 `retrieved_doc_ids` / 证据 `doc_id`；`kb_ingest` 清索引内存缓存。详见 `docs/experiment_notes.md` 同日条目、`docs/agent_runtime_architecture.md`。 |
 | 2026-05-12 | **规划链**：可选规划前 `rewrite_query`（`OrchestrationConfig` / CLI）、`planning_extensions`、第一层 `kb_mutation_intent` + 第二层 `documents.csv` 登记备注（`kb_inventory`）。**工具**：`src/agentic_rag/tools/` 实装 MarkItDown，`topic4_file_to_markdown`；`agent` 依赖组含 `markitdown`。**扩展**：`OrchestrationHooks.extend_agent_tools` 与 `build_topic4_deep_agent(..., additional_tools)`。**配置**：`MARKITDOWN_MAX_FILE_BYTES`；CubeSandbox 为备忘链接非内置对接。详见 `docs/experiment_notes.md` 同日条目（李金航）。 |
 | 2026-05-11 | 补充：`main.py agent` **新增编排层**（调度循环与 CLI；复用既有 RAG/全库构建）、`kb ingest`、全库 `run_knowledge_base_rag`、`chroma_store` 线程安全锁、`config` 与交互 CLI 约定；三层职能见 `.cursor/skills/topic4-orchestration-layers/SKILL.md`。实验细节见 `docs/experiment_notes.md` 同日条目（李金航）。 |
