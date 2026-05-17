@@ -1,248 +1,485 @@
-# Topic4 Agentic RAG Evaluation
+# 110实验室前沿技术分组研究与专题汇报
 
-本项目对应 110 实验室课题四，研究面向学习与知识服务任务的 Agentic RAG 技术增强与评测。
+## 课题四开题报告
 
-项目当前不是做完整学习助手产品，而是搭建一个可复现实验工程：在同一知识库、同一测试集上，对比 C0-C4 不同 RAG / Agentic RAG 配置，分析 query rewrite、hybrid retrieval、rerank、context expansion、self-check 和工具调用等模块是否真正提升效果，以及带来多少延迟和 token 成本。
+## 一、课题基本信息
 
-## 当前阶段
+| 项目 | 内容 |
+| :--- | :--- |
+| **研究题目** | 面向知识服务任务的 Agentic RAG 技术增强与评测研究：基于查询重写、多轮检索、工具调用与证据验证的模块化实验 |
+| **课题类型** | 算法实验类 / Agentic RAG 技术增强研究 / 模块消融与 Benchmark 评测 |
+| **对应课题** | 课题四：面向学习与知识服务场景的 Agentic RAG 工具型智能体设计与应用研究 |
+| **应用场景** | 面向学习资料管理、实验室知识服务、技术文档问答、表格分析和代码执行验证等知识服务任务。知识库材料不限定于单一课程，可包含学习资料、技术文档、项目说明、表格数据和代码片段；考虑评委多为教师，现场 Demo 可优先使用学习资料作为示例知识库，但研究创新点不绑定具体课程或复习场景。 |
+| **演示方式** | 提供轻量级技术验证 Demo，不追求完整产品体验。现场展示一次典型 Agentic RAG 执行链路，包括问题输入、查询诊断与改写、检索与 rerank、多轮检索、工具调用、self-check、最终答案、引用和日志输出；同时展示与 Dify / RAGFlow 等开源 ARAG/RAG 系统在同一知识库、同一测试任务下的横向参考结果。 |
+| **指导教师/带教学长** | 周灿宇 |
 
-截至 2026-05-13，项目处于：
+| 小组成员 | 姓名 | 学号 | 专业 | 负责模块 |
+| :--- | :--- | :--- | :--- | :--- |
+| 成员 A（组长） | （请填写） | （请填写） | （请填写） | 研究设计、Agentic 流程设计、非规范表达处理、任务规划、报告撰写 |
+| 成员 B | （请填写） | （请填写） | （请填写） | 实验知识库、测试集与 Benchmark 子集构建、参考答案与证据标注、人工评测 |
+| 成员 C | （请填写） | （请填写） | （请填写） | 检索管线、外部工具调用、评测脚本、Gradio Demo、日志与可视化 |
 
-```text
-C2 正式复现实验完成 + C2 日志写入修复完成 + C2 人工评测待补齐阶段
-```
+------
 
-当前重点：
+## 摘要
 
-1. C0/C1 已阶段性冻结，作为固定对照组。
-2. C2 已完成正式复现实验，三阶段均 20 题、0 error。
-3. C2 专属日志写入问题已修复，`runs/logs/c2_*` 现在能正确记录逐题 JSONL。
-4. 下一步不是继续加功能，而是补齐 `manual_eval_c2.csv`，人工评估答案正确性和引用准确性。
+本课题面向学习资料管理、实验室知识服务、技术文档问答、表格分析和代码执行验证等知识服务任务，拟研究并实现一个模块化 Agentic RAG 技术增强框架。系统围绕非规范或模糊查询、多文档证据整合、工具辅助计算、表格分析和代码执行验证等任务，分析查询诊断与自适应改写、检索反馈驱动的多轮检索、rerank、任务规划、self-check、工具调用和证据验证对 RAG 系统效果的影响。课题将构建普通 RAG、Query Rewrite RAG、Advanced RAG、Agentic Retrieval RAG 和 Tool-Augmented Agentic RAG 五组自研可控对比系统，并设置 Dify / RAGFlow 等开源 ARAG/RAG 系统作为 C5 横向参考。在完成原有 C0-C4 主线后，进一步将“轻量自适应模块调度”作为后续升级方向：简单任务优先走普通或 Advanced RAG 快速路径，复杂检索任务触发 query rewrite、rerank 和多轮检索，工具型任务触发外部工具调用与 self-check。评测采用自建知识服务任务集、公共 Benchmark 参考子集和开源系统横向对比子集相结合的方式，重点分析 Agentic RAG 在不同任务类型中的有效性、收益边界、额外延迟和 Token 成本。最终成果包括技术验证 Demo、测试集、Benchmark 子集、评测脚本、实验日志、模块消融报告、开源系统对比和失败案例分析。
 
-基础检查：
+**关键词**：Agentic RAG；知识服务任务；查询重写；多轮检索；工具调用；轻量自适应调度；模块消融；Benchmark 评测
 
-```text
-ruff: All checks passed
-pytest: 24 passed
-```
+------
 
-## 当前进度
+## 二、研究背景与意义
 
-已完成：
+### 2.1 研究背景
 
-- C0 Naive RAG：普通 RAG baseline，已完成 20 题批量实验。
-- C1 Query Rewrite RAG：已完成一次优化，已完成同一批 20 题实验。
-- C2 Advanced RAG：已完成正式三阶段复现实验，包括 hybrid retrieval、rerank、context expansion。
-- C2 日志修复：每个 C2 阶段现在会写入自己的 `runs/logs/<stage>/run_logs.jsonl`。
-- AI Judge 辅助评测模块已接通，但只作为辅助，不能替代人工评分。
-- 当前知识库包含 23 条文档记录、475 个 chunk、20 条核心测试题。
-- `references.csv` 的 20 条 `evidence_chunk_id` 已补齐，pending 数为 0。
-- `manual_eval_c0_c1.csv` 已建立，包含 40 行人工评分初稿。
+检索增强生成（Retrieval-Augmented Generation, RAG）通过在大语言模型生成答案前引入外部知识检索，能够缓解大模型知识过时、事实依据不足和幻觉等问题。普通 RAG 通常采用“一次检索 + 上下文拼接 + 直接生成”的静态流程，在规范提问和单一文档问答场景中具有较好的可用性。
 
-尚未完成：
+然而，在知识服务任务中，用户问题和知识库材料往往具有多源、异构和表达不统一的特点。知识库可能包含课程资料、技术文档、项目说明、网页快照、表格数据和代码片段；用户问题也可能存在非规范、模糊、省略、跨文档、多跳推理或工具需求等特点。例如，用户可能提出“这段报错怎么定位”“这几份文档说法有什么差异”“表格里哪个类别占比最高”“根据这些资料给出带引用结论”等问题。上述问题仅依赖普通 RAG 的一次检索和直接生成，容易出现证据召回不足、证据排序不佳、无法处理结构化数据、工具使用缺失或答案无证据支撑等问题。
 
-- C2 还缺人工 `Answer Correctness` 和 `Citation Accuracy`。
-- 当前 20 条测试题只适合作为核心回归集，最终仍需扩展到 45-50 条。
-- C3 的任务规划、多轮检索、self-check 还未正式验收。
-- C4 的文件读取、代码执行、计算器、表格分析工具还未正式进入主线实验。
-- 公共 Benchmark 参考子集和 Dify / RAGFlow 横向参考尚未开始。
+课题四要求系统围绕学习、课程资料管理、实验室知识服务或项目文档协作场景，设计一个“可检索、会规划、能调用工具”的智能助手。相比普通 RAG，Agentic RAG 更强调模型能够自主判断是否需要查询改写、多轮检索、证据重排、工具调用和答案验证，使系统从单步问答扩展为面向复杂任务的动态知识获取与执行流程。
 
-## 实验结果摘要
+因此，本课题不以某一个固定产品场景为研究对象，而是以 Agentic RAG 技术本身为研究对象，围绕查询改写、多轮检索、rerank、任务规划、工具调用和答案验证等模块开展实验创新与性能评测。学习资料仍可作为知识库和 Demo 材料之一，但不作为研究创新点的边界。本课题强调“技术模块是否有效、在哪些任务上有效、代价是否可接受、与开源系统相比有什么差异”，而不是构建一个完整产品。
 
-当前实验均基于同一知识库和同一批 20 条核心测试题。
+### 2.2 研究意义
 
-### C0/C1 文档级命中
+本课题具有以下意义：
 
-| 配置 | 题数 | 错误数 | 文档级命中 | 未命中题目 | 平均延迟 | 平均 token |
-| --- | ---: | ---: | ---: | --- | ---: | ---: |
-| C0 Naive RAG | 20 | 0 | 17/20 | Q005、Q007、Q013 | 7382 ms | 962 |
-| C1 Query Rewrite RAG | 20 | 0 | 19/20 | Q013 | 37060 ms | 1905 |
+1. **应用价值**：知识服务任务广泛存在于学习资料问答、技术文档检索、项目知识管理、表格分析和代码验证等场景，具有较强的迁移价值。
+2. **技术价值**：课题将普通 RAG 升级为包含任务规划、查询改写、多轮检索、rerank、外部工具调用和答案验证的 Agentic RAG 流程，并以模块化方式评估各环节贡献。
+3. **研究价值**：课题重点分析非规范表达处理、检索反馈、工具调用和证据验证对系统效果的影响，通过对比实验、公共 Benchmark 子集和模块消融实验量化各模块贡献。
+4. **可行价值**：本课题不训练大模型，不构建复杂商业平台，而是通过小规模知识库、固定测试集、可复现实验脚本和轻量 Demo 完成研究闭环，适合三名本科低年级学生在活动周期内完成。
 
-### C0/C1 人工评分初稿
+### 2.3 预期技术贡献
 
-| 配置 | Answer Correctness | Citation Accuracy |
-| --- | ---: | ---: |
-| C0 Naive RAG | 0.525 | 0.650 |
-| C1 Query Rewrite RAG | 0.400 | 0.550 |
+从论文式课题设计角度看，本课题的贡献不在于提出一个只适用于某门课程的学习助手，而在于形成一套可复用、可消融、可横向比较的 Agentic RAG 技术评测方案。预期贡献包括：
 
-当前人工评分仍是草稿，但已经显示一个重要现象：C1 虽然提升了文档级命中率，但没有稳定转化为更高的答案正确性和引用准确性。
+1. 提出“查询诊断—自适应改写—检索反馈修正”的查询增强流程，用于处理非规范、模糊、省略、跨文档和多跳查询。
+2. 构建从普通 RAG 到 Tool-Augmented Agentic RAG 的逐级增量实验配置，通过 C0-C4 和核心消融实验分析各模块贡献。
+3. 将自建知识服务任务集、公共 Benchmark 参考子集和 Dify / RAGFlow 横向参考结合起来，避免结论只依赖自建样例。
+4. 从检索质量、答案质量、引用可信度、工具调用能力和系统效率五类指标出发，分析 Agentic RAG 的有效任务、收益有限任务以及延迟和 Token 成本边界。
+5. 在原有模块递进实验基础上，探索轻量自适应模块调度策略，分析简单任务走快速路径、复杂任务走完整 Agentic 路径是否能降低不必要延迟和 Token 消耗。
 
-### C2 正式复现实验
+------
 
-固定参数：
+## 三、问题定义与研究假设
 
-```powershell
-uv run python run_c2_retrieval_ablation.py --phase all --limit 20 --neighbors 1
-```
+### 3.1 问题定义
 
-| 配置 | 题数 | 错误数 | 文档级命中 | Gold chunk 命中 | 平均延迟 | 平均 token |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| C2 Stage1：C1 + hybrid retrieval | 20 | 0 | 19/20 | 9/20 | 17719 ms | 2143 |
-| C2 Stage2：C1 + hybrid retrieval + rerank | 20 | 0 | 20/20 | 15/20 | 28761 ms | 12462 |
-| C2 Stage3：C1 + hybrid retrieval + rerank + context expansion | 20 | 0 | 20/20 | 15/20 | 27887 ms | 14462 |
+本课题研究的问题定义为：
 
-C2 日志校验：
+> 在知识服务任务中，面对非规范或模糊查询、多文档证据整合、结构化数据处理和工具调用需求，如何通过 Agentic RAG 的查询诊断与改写、多轮检索、证据重排、任务规划、外部工具调用与答案验证，使系统相比普通 RAG 更准确地定位证据、更可靠地生成带引用答案，并完成需要工具参与的复合任务？
 
-| 阶段 | CSV 行数 | 日志行数 | 日志位置 |
-| --- | ---: | ---: | --- |
-| Stage1 | 20 | 20 | `runs/logs/c2_stage1_c1_hybrid/run_logs.jsonl` |
-| Stage2 | 20 | 20 | `runs/logs/c2_stage2_c1_hybrid_rerank/run_logs.jsonl` |
-| Stage3 | 20 | 20 | `runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl` |
+本课题的研究对象不是通用代码助手、学习平台或完整产品，而是 Agentic RAG 技术方案本身。研究重点在于比较不同技术模块对检索质量、答案质量、引用可信度、工具调用能力和系统效率的影响，并分析 Agentic RAG 在不同任务类型中的收益边界。
 
-注意：文档级命中和 Gold chunk 命中只说明检索侧表现，不等于答案一定正确，也不等于引用一定可靠。C2 仍需唐宁补人工评分。
+该问题包含以下子问题：
 
-## 阶段性结论
+1. 普通 RAG 在知识服务任务中主要失败在哪些环节：查询表达、检索召回、证据排序、工具处理、答案生成还是引用验证？
+2. Agentic RAG 相比普通 RAG 是否能稳定提升检索质量、答案质量和引用可信度？
+3. query rewrite、多轮检索、rerank、任务规划、self-check 和 tool calling 分别能带来多大增益？
+4. 文件读取、代码执行、计算器、表格分析等外部工具能否提升工具型任务完成率？
+5. Agentic RAG 在哪些任务中收益明显，在哪些任务中收益有限？
+6. Agentic RAG 在提升效果的同时，会带来多少额外 Token 成本和响应延迟，是否可以接受？
+7. 在完成 C0-C4 主线系统后，能否通过轻量自适应调度使简单任务走快速路径、复杂任务走完整 Agentic 路径，从而在保持效果的同时降低不必要成本？
 
-1. C1 提高了文档级命中，但不是稳定更强。当前人工评分初稿中，C1 的答案正确性和引用准确性低于 C0。
-2. Query rewrite 对模糊、口语化、非规范查询有帮助，但存在改写漂移风险，并显著增加延迟和 token 成本。
-3. C2 的 hybrid retrieval 对文档召回有帮助，但 Stage1 的 Gold chunk 命中仍较低。
-4. C2 的 rerank 明显改善检索侧排序，Stage2 的 Gold chunk 命中从 9/20 提升到 15/20。
-5. C2 的 context expansion 没有进一步提升 Gold chunk 命中，且 token 成本更高；是否提升答案质量必须通过人工评分判断。
-6. 当前研究重点应从“模块能跑”转向“模块是否有效、何时有效、成本是否可接受”。
+### 3.2 研究假设
 
-## 项目目录
+| 假设 | 内容 | 判定标准 |
+| :--- | :--- | :--- |
+| H1：查询诊断与自适应改写有效 | 在非规范、模糊、省略、跨文档或多跳问题上，查询诊断与规范化改写能够提升检索召回 | C1 相比 C0，或 C4-full 相比 C4-no-rewrite 的 Recall@5、MRR@10 提升 |
+| H2：Advanced RAG 有效 | 混合检索与 rerank 能提升证据排序质量和引用完整性 | C2 相比 C1 的 nDCG@10、Citation Coverage 提升 |
+| H3：Agentic 检索流程有效 | 在不调用外部工具的检索型任务中，任务规划、多轮检索和检索反馈能改善证据不足或多文档任务 | C3 相比 C2 的 Re-retrieval Success、Citation Coverage 提升 |
+| H4：外部工具有效 | 在需要文件读取、代码执行、计算或表格分析的工具型任务中，外部工具调用能提升任务完成质量 | Tool Call Success ≥ 80%，Tool Selection Accuracy ≥ 75%，且 C4 在工具型任务上的 Task Completion 高于 C3 |
+| H5：答案验证有效 | 在 C3 或 C4 中关闭 self-check 后，Faithfulness 与 Citation Accuracy 下降；开启 self-check 后，无证据回答比例降低 | C3 相比 C3-no-self-check，或 C4-full 相比 C4-no-self-check 的 Faithfulness、Citation Accuracy 提升 |
+| H6：性能代价可接受 | C4 虽增加延迟和 Token 消耗，但收益可解释 | 若 C4 的 p95 延迟不超过 C3 的 1.5 倍，或单任务平均响应时间不超过 30 秒，则视为技术验证场景可接受；否则作为性能代价问题报告 |
+| H7：轻量自适应调度具有拓展价值 | 在完成 C0-C4 主线后，系统可根据任务类型和检索反馈选择快速路径或完整 Agentic 路径 | 作为后续升级指标，若 C4-Adaptive 的答案质量与 C4-full 基本接近，同时 Token Cost、API Call Count 或平均延迟下降，则说明该方向具有继续研究价值 |
 
-```text
-data/       知识库材料、处理后数据、测试集
-src/        项目代码
-configs/    C0-C4 和消融实验配置
-prompts/    Prompt 模板
-runs/       实验日志、结果表、图表，本地生成，默认不提交
-docs/       协作规范、接口规范、实验记录和实施说明
-tests/      基础测试
-archive/    本地实验备份，不提交
-```
+------
 
-重点文档：
+## 四、相关工作综述
 
-- `docs/README.md`：docs 目录导航。
-- `docs/interface_and_logging_rules.md`：C0/C1/C2 输入输出结构和日志字段。
-- `docs/batch_experiment_guide.md`：C0/C1 批量实验说明。
-- `docs/c2_ablation_guide.md`：C2 三阶段消融实验说明。
-- `docs/evaluation_plan.md`：人工评测流程和评分规则。
-- `docs/failure_cases.md`：典型失败案例。
-- `docs/manual_eval_c0_c1_summary.md`：C0/C1 人工评测摘要。
-- `docs/evaluation_ai_judge.md`：AI Judge 模块说明。
-- `docs/experiment_notes.md`：实验记录。
+### 4.1 普通 RAG 与 Advanced RAG
 
-## 环境准备
+普通 RAG 通过检索外部文档增强大模型生成结果，但其效果高度依赖检索阶段的召回质量和排序质量。若查询表达与知识库表达不一致，或正确证据未进入上下文，后续生成环节难以补救。Advanced RAG 在普通 RAG 基础上加入查询改写、混合检索、rerank、上下文扩展和答案验证等模块，用于提高召回率、证据质量和答案可信度。
 
-项目统一使用 Python 3.12 和 `uv`。
+### 4.2 Agentic RAG
 
-```powershell
-uv sync
-uv run python --version
-```
+Agentic RAG 将智能体机制引入 RAG 流程，使系统能够根据任务状态动态决定是否检索、是否改写查询、是否调用工具、是否多轮检索以及是否验证答案。与普通 RAG 相比，Agentic RAG 更适合处理非规范查询、多文档比较、多跳证据整合、结构化数据分析和工具型任务。
 
-复制环境变量模板：
+### 4.3 非规范表达处理与查询改写
 
-```powershell
-Copy-Item .env.example .env
-```
+真实知识任务中存在大量非规范表达，包括口语化表达、省略表达、错记概念、代词指代、混合中英文、跨文档指代和上下文依赖表达。传统静态词典只能覆盖少量固定术语，难以处理复杂语境。本课题将“查询诊断与自适应改写”作为核心子创新点，设计“查询诊断—规范化改写—检索反馈修正”的三阶段机制。本项目不是简单将用户问题交给 LLM 一次性改写，而是先判断问题类型和检索难点，再结合知识库元数据、历史检索失败原因和证据覆盖情况生成候选查询；若初次检索证据不足，系统根据失败类型进行二次改写或补充检索。
 
-本地 `.env` 至少需要配置：
+### 4.4 工具型智能体
 
-```text
-ARK_API_KEY=your_key_here
-DEEPSEEK_API_KEY=your_key_here
-```
+MCP、Function Calling、ReAct 等机制使大模型能够调用外部工具完成任务。在知识服务任务中，外部工具不是附加展示功能，而是完成复合任务的重要能力。例如，文件读取用于解析上传文档或定位指定片段，代码执行用于验证程序或简单数据处理，表格分析用于统计结构化数据，计算器用于完成比例、时间、分数和数值计算。文件读取工具不仅用于离线知识库构建，也支持用户在 Demo 中上传文件后，由 Agent 按任务需要读取指定页码、章节或片段。网页搜索可服务于补充资料查询，但考虑到复现性，本课题将其作为选做扩展。
 
-注意：
+### 4.5 RAG 与 Agent 评测
 
-- `.env` 不能提交到 GitHub。
-- 不要把 API Key 写进 Markdown、CSV、日志截图或聊天记录。
-- 所有脚本尽量使用 `uv run python ...` 运行。
+RAG 评测不应只关注最终答案，还应分析检索、证据、引用和成本。Agent 评测还需要关注工具选择是否正确、工具调用是否成功、多步任务是否完成。RAGAS、ARES、RAGChecker 等评测思想为本课题提供了指标参考。与此同时，BEIR、MIRACL、HotpotQA、ToolBench / Berkeley Function Calling Leaderboard 等公开 Benchmark 可为检索、多跳问答和工具调用能力提供通用样例。本课题采用“自建知识服务任务集 + 公共 Benchmark 参考子集”的方式进行评价：自建任务集用于核心实验结论，公共 Benchmark 子集用于增强评测的通用参照性。
 
-## 常用命令
+------
 
-基础检查：
+## 五、研究目标
 
-```powershell
-uv run ruff check .
-uv run pytest
-```
+本课题拟完成一个面向知识服务任务的轻量 Agentic RAG 技术验证原型，并通过对比实验验证其相对普通 RAG 的效果提升。学习资料可作为实验知识库和现场 Demo 材料之一，但本课题不以“学习助手产品”为目标，而是以 Agentic RAG 的模块增强、模块消融、Benchmark 参考和开源系统横向对比为研究对象。项目执行上以原有 C0-C4 递进实验为主干，轻量自适应模块调度作为完成主线后的升级方向。
 
-运行 C0/C1 批量实验：
+具体目标如下：
 
-```powershell
-uv run python run_batch_experiments.py
-```
+1. 构建小规模通用知识实验库，包含学习资料、技术资料、项目文档、表格资料和代码片段等材料；现场 Demo 可优先使用学习资料作为知识库示例。
+2. 构建 40-50 条自建知识服务任务，分为检索型任务、证据整合任务和工具型任务，分别验证 Agentic 检索流程和外部工具调用的增益。
+3. 实现五组可控对比系统：普通 RAG、查询重写 RAG、Advanced RAG、Agentic Retrieval RAG、本研究 Tool-Augmented Agentic RAG。
+4. 设计非规范表达处理模块，包括查询诊断、规范化改写和检索反馈修正。
+5. 设计 Agentic RAG 模块，包括 query rewrite、多轮检索、rerank、任务规划、self-check 或答案验证。
+6. 实现至少 4 类外部工具调用能力，主线工具为文件读取、代码执行、计算器和表格分析；网页搜索作为选做扩展。
+7. 从回答准确率、证据引用完整性、工具调用成功率、多步任务完成率、用户体验、延迟和 Token 成本等维度进行评测。
+8. 引入小规模公共 Benchmark 参考子集，从 BEIR / MIRACL、HotpotQA、ToolBench 或 Berkeley Function Calling Leaderboard 中选取与检索、多跳证据和工具调用相关的样例，用于补充验证通用能力。
+9. 使用 Dify / RAGFlow 作为 C5 开源 ARAG/RAG 系统参考，在同一知识库、同一测试任务、尽量相同 LLM 的条件下进行横向对比。
+10. 在 C4 跑通后，探索轻量自适应调度策略，将任务粗分为简单问答、复杂检索和工具型任务，分别选择快速路径、增强检索路径和工具增强路径，作为后续升级实验。
+11. 分析 Agentic RAG 的适用任务、收益有限任务、额外延迟和 Token 成本，形成边界分析。
+12. 完成轻量技术 Demo、实验报告、测试集、评测脚本、实验日志和复现说明。
 
-运行 C2 小样本验证：
+为控制项目规模，本课题不进行大模型训练或微调，不追求完整运行全部公共 Benchmark，也不构建复杂产品界面。系统实现以“能稳定复现、能解释实验结果、能展示关键技术差异”为最低完成标准。
 
-```powershell
-uv run python run_c2_retrieval_ablation.py --phase 1 --limit 5
-uv run python run_c2_retrieval_ablation.py --phase 2 --limit 5
-uv run python run_c2_retrieval_ablation.py --phase 3 --limit 5 --neighbors 1
-```
+------
 
-运行 C2 完整三阶段实验：
+## 六、研究内容与技术路线
 
-```powershell
-uv run python run_c2_retrieval_ablation.py --phase all --limit 20 --neighbors 1
-```
+### 6.1 知识库构建
 
-## 实验输出
+知识库采用“通用任务材料 + Demo 学习资料 + Benchmark 参考样例”的分层设计。为便于现场展示和人工标注，Demo 材料可优先选择课程课件、实验指导书、课堂笔记和示例统计表等学习资料；但主研究对象是 Agentic RAG 技术模块，不限定于某一门课程或固定学习场景。
 
-C0/C1 批量实验输出：
+| 类型 | 内容 | 用途 |
+| :--- | :--- | :--- |
+| 学习资料 | 课程课件、实验指导书、课堂笔记、作业说明、示例代码片段 | Demo 与可控知识库材料，便于评委理解 |
+| 技术资料 | Agent/RAG 学习指南、项目说明、API 文档、实验记录 | 技术文档问答、多文档比较和证据引用 |
+| 表格资料 | CSV 示例统计表、实验结果表、简单数据表 | 表格分析、数值统计和工具调用任务 |
+| 代码资料 | 小段 Python 示例、测试脚本、报错样例 | 代码执行验证和工具型任务 |
+| 网页资料快照 | 教材补充资料或公开课程页面摘要 | 选做网页搜索工具的可复现数据源 |
 
-```text
-runs/logs/c0_naive/run_logs.jsonl
-runs/results/c0_results.csv
-runs/logs/c1_rewrite/run_logs.jsonl
-runs/results/c1_results.csv
-```
+为保证实验可控和标注可靠，自建知识库规模保持小而清晰，不追求覆盖大量课程或行业文档。学习资料可以作为现场 Demo 的主要材料，但测试任务应覆盖通用检索、证据整合、工具调用、表格分析和代码验证等不同能力。
 
-C2 三阶段实验输出：
+知识库构建流程包括文档解析、文本清洗、分块、元数据记录、向量化和索引构建。每个知识片段记录资料类型、文档名称、主题、章节、页码或行号等元数据，以支持答案引用和错误追溯。对于代码片段和表格资料，将分别保留原始文件路径、样例编号、主题标签和必要说明，便于后续工具调用和人工评测。
+
+### 6.2 非规范表达处理模块
+
+本课题保留原方案中“复杂非规范表达处理”的优势，并将其泛化为面向知识服务任务的查询诊断与自适应改写模块。该模块包含三步：
+
+1. **查询诊断**：判断用户问题中是否存在口语化、省略式、错记式、代词指代、跨文档指代、多跳问题或混合中英文表达。
+2. **规范化改写**：结合文档标题、元数据、上下文和任务类型，将用户问题改写为适合检索的规范查询。
+3. **检索反馈修正**：若初次检索证据不足，系统根据失败原因生成候选查询或执行二次检索。
+
+该模块的输出不仅包括改写后的查询，还包括非规范表达类型、改写理由和检索反馈记录。这样既便于在 Demo 中展示 Agentic RAG 的中间过程，也便于在实验中分析查询改写失败的原因。
+
+示例：
+
+| 原始表达 | 规范化查询 |
+| :--- | :--- |
+| “这个报错咋改” | “该异常类型的原因、定位方法和修复步骤是什么” |
+| “这几份资料说法有啥不同” | “比较多个文档中关于同一概念的定义、条件和适用范围” |
+| “表里哪个最多” | “统计表格中各类别数量并找出最高频类别” |
+| “这个工具该不该用” | “判断当前任务是否需要外部工具以及需要调用的工具类型” |
+
+### 6.3 Agentic RAG 核心流程
+
+本课题明确区分 Agentic RAG 内部模块与外部工具调用能力。query rewrite、多轮检索、rerank、任务规划和 self-check 属于 Agentic RAG 内部模块；文件读取、网页搜索、计算器、表格分析和代码执行属于外部工具调用能力。若任务涉及计划生成、步骤分解或时间分配，由任务规划模块结合计算器完成，不单独实现日程规划工具。
+
+为保证实验变量清晰，C3 阶段仅实现不调用外部工具的 Agentic Retrieval RAG，重点验证任务规划、多轮检索和 self-check 对检索型与证据整合任务的作用；C4 阶段在 C3 基础上接入外部工具，重点验证工具调用对计算、表格分析和代码执行等工具型任务的贡献。
+
+系统总体流程如下：
 
 ```text
-runs/logs/c2_stage1_c1_hybrid/run_logs.jsonl
-runs/logs/c2_stage2_c1_hybrid_rerank/run_logs.jsonl
-runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
-runs/results/c2_stage1_c1_hybrid_results.csv
-runs/results/c2_stage2_c1_hybrid_rerank_results.csv
-runs/results/c2_stage3_c1_hybrid_rerank_context_results.csv
-runs/results/c2_ablation_summary.json
-runs/results/c2_ablation_report.md
+用户任务
+  ↓
+Task Planner：判断任务类型、所需资料、是否需要外部工具
+  ↓
+Query Diagnosis & Rewrite：识别非规范表达并生成规范查询
+  ↓
+Retrieval：原查询 + 改写查询执行向量检索和 BM25 检索
+  ↓
+Rerank：对候选证据重新排序
+  ↓
+Tool Calling：根据任务计划调用外部工具
+  ↓
+Evidence Check：判断证据和工具结果是否覆盖问题关键点
+  ↓
+Re-retrieval：证据不足时进行二次检索或补充查询
+  ↓
+Answer Generation：生成带引用答案
+  ↓
+Self-check：验证关键结论是否被证据或工具结果支持
+  ↓
+输出答案、引用、工具轨迹、执行日志、Token 与延迟
 ```
 
-其中 `runs/logs/*` 和 `runs/results/*` 是本地实验输出，默认不提交到 GitHub。
+### 6.4 外部工具调用能力
 
-## C0-C4 配置定位
+本课题至少实现 4 类外部工具。主线工具限定为文件读取、代码执行、计算器和表格分析；网页搜索作为选做扩展，不作为核心实验成败的必要条件。计划生成或步骤分解由 C3/C4 的任务规划模块完成，不单独实现日程规划工具，以控制实现范围。
 
-| 配置 | 名称 | 当前定位 |
-| --- | --- | --- |
-| C0 | Naive RAG | 普通 RAG baseline：文档解析、切块、embedding、Top-K 检索、答案生成。 |
-| C1 | Query Rewrite RAG | 在 C0 基础上新增 query rewrite，包括查询诊断、检索式改写、多候选 query 和保守改写判断。 |
-| C2 | Advanced RAG | 在 C1 基础上验证 hybrid retrieval、rerank、context expansion。 |
-| C3 | Agentic Retrieval RAG | 后续新增任务规划、多轮检索和 self-check，不包含外部工具。 |
-| C4 | Tool-Augmented Agentic RAG | 后续新增文件读取、代码执行、计算器、表格分析工具。 |
+| 工具 | 输入 | 输出 | 服务任务 |
+| :--- | :--- | :--- | :--- |
+| 文件读取工具 | Demo 运行时上传文件、文件名、页码或章节 | 文本片段与元数据 | 定位文档片段、抽取证据、辅助引用 |
+| 代码执行工具 | Python 代码片段或简单数据分析任务 | 执行结果、错误信息 | 验证代码输出、辅助解释报错、处理简单数据 |
+| 计算器工具 | 算式、分数比例、时间或数量 | 计算结果 | 数值计算、比例计算、简单计划分配 |
+| 表格分析工具 | CSV 表格、实验结果表 | 统计结果、类别分布、排序结果 | 分析结构化数据和表格统计 |
+| 网页搜索工具（选做） | 查询词 | 网页标题、摘要、来源链接或固定网页快照结果 | 查找公开补充解释；正式实验使用固定网页快照保证可复现 |
 
-实验原则：每次只新增一类关键能力，避免变量混在一起导致结果无法解释。
+工具调用采用“规则优先、模型判断补充”的方式实现。系统首先根据任务关键词、输入文件类型和人工标注的工具需求进行初步选择，再由任务规划模块决定是否组合多个工具。每次工具调用均记录工具名称、输入参数、返回结果、是否成功和是否被最终答案使用，以支持 Tool Selection Accuracy、Tool Call Success 和失败案例分析。
 
-## 下一步工作
+### 6.5 典型任务流程
 
-优先级从高到低：
+| 任务 | 普通 RAG 难点 | Agentic RAG 处理方式 | 预期展示效果 |
+| :--- | :--- | :--- | :--- |
+| 非规范或模糊查询 | 查询与文档表达不一致 | 查询诊断 + 自适应改写 + rerank | 正确证据召回和排序提升 |
+| 多文档证据整合 | 单次检索可能漏文档或证据分散 | 多路检索 + rerank + self-check | 输出多文档引用和证据链 |
+| 上传文件定位内容 | 普通 RAG 难以处理运行时文件 | 文件读取 + 片段检索 + 引用 | 输出指定文件片段和来源 |
+| 表格统计任务 | 普通 RAG 无法可靠计算 CSV | 表格分析 + 结果解释 | 输出统计结果和计算依据 |
+| 代码验证任务 | 普通 RAG 只能解释，不能执行 | 代码执行 + 结果解释 + 证据验证 | 输出运行结果、错误信息和解释 |
+| 需数值计算任务 | 容易心算错误或步骤不透明 | 计算器 + 任务规划 | 输出计算过程和结果 |
+| 补充资料查询（选做） | 普通 RAG 只能基于本地知识库 | 网页快照搜索 + 证据整合 | 输出补充解释来源 |
 
-1. 唐宁建立 `data/testset/manual_eval_c2.csv`，对 C2 Stage1/Stage2/Stage3 分别评分 Answer Correctness 和 Citation Accuracy。
-2. 先完成 Stage2 的 20 题人工评分，再补 Q005、Q007、Q013、Q018 的三阶段横向案例分析。
-3. 赵启行汇总 C0/C1/C2 总表：文档命中、Gold chunk 命中、答案正确性、引用准确性、延迟、token。
-4. 李金航解释 C2 三阶段收益与成本，尤其是 rerank 提升和 context expansion 的边界。
-5. C2 人工验收后，再决定是否阶段性冻结 C2。
-6. C2 冻结后，再进入 C3：任务规划、多轮检索和 self-check。
-7. C3 稳定后，再进入 C4：文件读取、代码执行、计算器和表格分析工具调用。
+### 6.6 对比配置
 
-建议分工：
+| 编号 | 名称 | 方法 | 作用 |
+| :--- | :--- | :--- | :--- |
+| C0 | Naive RAG | 基础向量检索 + 直接生成 | 普通 RAG 基线 |
+| C1 | Query Rewrite RAG | 在 C0 上仅新增非规范表达识别与查询改写 | 验证非规范表达处理收益 |
+| C2 | Advanced RAG | 在 C1 上新增 BM25 混合检索 + rerank | 验证检索增强收益 |
+| C3 | Agentic Retrieval RAG | 在 C2 上新增任务规划、多轮检索和 self-check，但不调用外部工具 | 验证 Agentic 检索流程收益 |
+| C4 | Tool-Augmented Agentic RAG | 在 C3 上新增文件读取、代码执行、计算器、表格分析等外部工具调用；无工具需求时行为与 C3 保持一致 | 验证工具型智能体收益 |
+| C5-Dify / C5-RAGFlow | 开源 ARAG/RAG 系统参考 | Dify 或 RAGFlow 配置同一知识库、同一测试任务、尽量相同 LLM | 横向参考，不作为模块消融结论 |
 
-- 赵启行：统筹阶段冻结、检查结论表述、推进 C2 验收和最终报告逻辑。
-- 唐宁：复核 C0/C1 人工评分，补充 C2 人工评分，维护失败案例。
-- 李金航：解释 C2 三阶段收益与成本，维护 hybrid retrieval、rerank、context expansion 相关代码。
+C0-C4 采用逐级增量设计，每一组仅在上一组基础上增加一类关键能力，以便进行模块贡献分析。正式结论分两条轨道表述：检索型和证据整合任务主要分析 C0-C3 的变化，工具型任务主要分析 C3-C4 的变化，避免把检索增强和工具调用混为同一结论。C5 仅用于与当前开源 ARAG/RAG 系统进行横向参考，不参与模块贡献归因。
 
-## 协作注意事项
+在主线实验完成后，若时间允许，可增加 **C4-Adaptive** 作为后续升级配置。C4-Adaptive 不替代 C4-full，而是在 C4 能稳定运行的基础上增加轻量路径选择规则：简单事实问答走 C0/C2 快速路径，模糊或多文档任务走 C3 检索增强路径，涉及文件、表格、计算或代码的问题走 C4 工具增强路径。该配置用于探索“完整 Agentic 流程是否总是必要”，不作为开题阶段的最低完成要求。
 
-- GitHub 仓库是唯一同步来源。
-- 每天开始工作前先 `git fetch` / `git pull`，确认自己基于最新远端。
-- 不要随意强推 `main`，不要用无关历史覆盖 `main`。
-- 新增依赖使用 `uv add`，不要各自随便 `pip install`。
-- 不提交 `.env`、`.venv/`、API Key、临时日志、大体积索引和本地 `archive/` 备份。
-- Demo 能跑不等于实验完成，必须有日志、指标、失败案例和成本分析。
+若时间允许，将围绕 C3/C4 进行轻量消融实验，用于解释性能提升来源：
+
+| 消融配置 | 关闭能力 | 目的 |
+| :--- | :--- | :--- |
+| C4-full | 不关闭 | 完整工具增强方案 |
+| C4-no-rewrite | query rewrite | 观察查询改写对非规范和模糊问题的影响 |
+| C4-no-rerank | rerank | 观察重排对证据排序和引用准确性的影响 |
+| C4-no-retrieval-feedback | 多轮检索 / 检索反馈 | 观察证据不足时二次检索的贡献 |
+| C4-no-self-check | 答案验证 | 观察 self-check 对引用可信度和幻觉控制的影响 |
+| C4-no-tool | 外部工具调用 | 观察工具调用对工具型任务的贡献，可近似对照 C3 |
+
+若时间受限，优先完成 C4-no-rewrite、C4-no-self-check 和 C4-no-tool 三个核心消融；其他消融作为补充分析。
+
+若完成 C4-Adaptive，可补充 `C4-adaptive` 与 `C4-full` 的轻量对比，观察自适应路径是否降低不必要工具调用、API 调用次数、平均延迟和 Token 成本。该部分作为升级方向展示，不影响 C0-C4 主线实验结论。
+
+### 6.7 技术栈选择
+
+| 模块 | 推荐选择 | 理由 |
+| :--- | :--- | :--- |
+| 语言与环境 | Python 3.11/3.12 + uv + pyproject.toml + uv.lock | 统一 Python 版本、依赖安装和锁文件，便于三人协作与答辩复现 |
+| 文档解析 | PyMuPDF、python-docx、Markdown parser | 覆盖课件、笔记和报告 |
+| 表格分析 | pandas | 处理 CSV 表格和实验结果 |
+| 代码执行 | 受限 Python subprocess 或 Notebook 内核 | 主线工具之一，只执行白名单小脚本 |
+| 网页搜索 | 固定网页快照 + 可选搜索 API | 选做扩展，核心实验优先使用固定快照 |
+| 向量库 | Chroma 或 FAISS | 小规模本地实验足够 |
+| 关键词检索 | rank-bm25 | 轻量实现 BM25 |
+| Embedding | BGE-small-zh-v1.5 起步，BGE-M3 增强 | 适合中文和中英混合资料 |
+| Rerank | bge-reranker-base 或 LLM 打分 | 提升证据排序 |
+| Agent 编排 | 自定义状态机起步，LangGraph 增强 | 便于理解和调试 |
+| LLM | DeepSeek/Qwen/OpenAI 兼容接口，固定同一模型 | 控制实验变量 |
+| Demo | Gradio | 快速展示输入、工具轨迹和结果 |
+
+项目依赖管理采用 uv。正式实验以 `pyproject.toml` 和 `uv.lock` 固定环境，运行命令统一使用 `uv sync` 和 `uv run`；`.venv/` 不提交仓库。为降低复现门槛，可在最终归档时额外导出 `requirements.txt` 作为兼容安装方式。
+
+------
+
+## 七、测试集与评价指标
+
+### 7.1 测试集设计
+
+测试集采用“三层设计”：自建知识服务任务集、公共 Benchmark 参考子集、开源系统横向对比子集。自建任务规模控制在 40-50 条，保证可标注、可复现、可在活动周期内完成。正式统计分为检索型任务、证据整合任务和工具型任务三类：检索型与证据整合任务主要比较 C0-C3，工具型任务主要比较 C3 与 C4，避免把检索增强和工具调用混在同一组结论中。网页搜索只作为 Demo 或补充实验。
+
+| 子集 | 题量 | 示例 | 评测目的 |
+| :--- | :---: | :--- | :--- |
+| 非规范 / 模糊查询 | 10-12 | “这个报错咋改？”“这几个说法有什么区别？” | 检索型任务，检验 query rewrite |
+| 证据定位 / 多文档比较 | 10-12 | “两份资料对同一概念的条件有何不同？” | 证据整合任务，检验混合检索、rerank 和多轮检索 |
+| 代码 / 计算验证 | 8-10 | “运行这段代码并解释输出。”“计算表中比例。” | 工具型任务，检验代码执行和计算器 |
+| 表格分析 / 结构化数据 | 8-10 | “表格里哪个类别最多？”“按分组统计结果。” | 工具型任务，检验表格分析 |
+| 简单事实问答 | 5-6 | “某概念的定义是什么？” | 边界任务，观察 ARAG 相比普通 RAG 的收益是否有限 |
+
+每条测试任务至少包含任务编号、问题文本、任务类型、参考答案、标准证据、所需工具、难度标签和备注。检索型任务重点标注正确证据片段；工具型任务除参考答案外，还标注必要工具集合和工具输出判定规则。测试集在正式实验前冻结，后续不得根据模型输出临时修改题目或参考答案。
+
+为避免评测完全依赖自建样例，本课题额外设置 10-15 条公共 Benchmark 参考样例。该部分不替代自建知识服务任务集，也不作为主结论唯一依据，主要用于观察系统在通用检索、证据问答和工具调用任务上的相对表现。
+
+| Benchmark 来源 | 建议样例数 | 对应能力 | 使用方式 |
+| :--- | :---: | :--- | :--- |
+| BEIR 或 MIRACL | 4-5 | 通用检索与证据召回 | 选取短文本检索样例，计算 Recall@K、MRR、nDCG |
+| HotpotQA | 3-5 | 多跳证据问答 | 选取需要多文档证据的问题，评估答案正确性和引用准确性 |
+| ToolBench 或 Berkeley Function Calling Leaderboard | 3-5 | 工具选择与函数调用 | 将样例简化映射到本项目已有工具，评估 Tool Selection Accuracy 和 Tool Call Success |
+
+公共 Benchmark 子集的作用是提供权威样例参照，而不是证明系统在所有通用任务上优于公开模型。若 Benchmark 原始任务与本课题自建任务差异较大，将在报告中说明适配方式和结论边界。
+
+开源系统横向对比子集选取 10-15 条代表性任务，使用 Dify / RAGFlow 与自研 C4 在同一知识库、同一测试任务、尽量相同 LLM 条件下进行对比。该部分重点比较 Answer Correctness、Citation Accuracy、Task Completion、Latency 和 Token Cost；若开源系统内部工具日志不可观测，则不强行计算 Tool Selection Accuracy，而在报告中说明限制。
+
+### 7.2 评价指标
+
+| 维度 | 指标 | 说明 |
+| :--- | :--- | :--- |
+| 检索质量 | Recall@5、Recall@10、MRR@10、nDCG@10 | 正确证据是否被召回且排名靠前 |
+| 检索反馈 | Re-retrieval Success | 初次证据不足时，二次检索是否提升证据覆盖 |
+| 改写质量 | Query Rewrite Accuracy | 非规范表达是否被正确识别和规范化 |
+| 答案质量 | Answer Correctness、Answer Completeness | 答案是否正确、完整 |
+| 引用可信 | Faithfulness、Citation Coverage、Citation Accuracy | 答案是否有证据支持 |
+| 工具调用 | Tool Call Success、Tool Selection Accuracy | 是否选择并成功调用正确外部工具 |
+| 任务完成 | Multi-step Task Completion | 复合任务是否完成用户目标 |
+| 表格/计算 | Table Analysis Accuracy、Calculation Accuracy | 表格统计和计算是否正确 |
+| 性能成本 | p50/p95 Latency、Token Cost、API Call Count | Agentic RAG 的额外代价 |
+
+正式汇报时将主指标收敛为五类：检索质量、答案质量、引用可信度、工具调用能力和系统效率。其他指标作为附录或补充分析，避免答辩中指标过散。若实现 C4-Adaptive，可额外记录 Path Selection Accuracy、Unnecessary Tool Call Rate 和 Fast Path Hit Rate，用于说明轻量自适应调度是否减少不必要模块调用；这些指标为升级方向指标，不替代五类主指标。
+
+### 7.3 指标判定细则
+
+为保证评价可复现，本课题对核心指标采用以下判定规则：
+
+| 指标 | 判定规则 |
+| :--- | :--- |
+| Answer Correctness | 与人工参考答案核心要点一致记为正确；遗漏关键步骤或结论错误记为部分正确或错误 |
+| Recall@K | 人工标注的正确证据片段出现在前 K 个检索结果中记为召回 |
+| Re-retrieval Success | 初次检索证据不足时，二次检索后正确证据进入候选证据或引用证据集合 |
+| Citation Accuracy | 引用片段能够直接支持答案中的关键结论，且文档来源和片段位置正确 |
+| Faithfulness | 答案中的主要结论均能由检索证据或工具输出支持，不添加资料外事实 |
+| Query Rewrite Accuracy | 改写后查询保留原意，并能指向知识库中的规范概念、文档主题或代码概念 |
+| Tool Selection Accuracy | 系统选择的工具集合与人工标注的必要工具集合一致记为正确；多调或漏调记为部分错误 |
+| Tool Call Success | 工具被成功调用并返回可用结果，且结果被用于最终答案 |
+| Multi-step Task Completion | 任务计划、检索/工具调用、答案生成和验证均完成，最终结果满足用户目标 |
+| 性能可接受性 | C4 的 p95 延迟不超过 C3 的 1.5 倍，或单任务平均响应时间不超过 30 秒；若超过阈值，则在结果分析中作为性能代价说明 |
+
+人工评测采用双人交叉复核方式：成员 B 先标注参考答案、证据和必要工具，成员 A 或 C 抽查争议样例；存在分歧时记录原因，并在失败案例分析中说明。
+
+### 7.4 适用范围与边界分析
+
+本课题不仅报告 Agentic RAG 是否优于普通 RAG，还分析其适用范围和收益边界。
+
+| 任务类型 | 预期收益 | 原因 |
+| :--- | :--- | :--- |
+| 非规范或模糊查询 | 较明显 | 查询诊断与改写可改善检索表达 |
+| 多文档证据整合 | 较明显 | 多轮检索、rerank 和 self-check 可提高证据覆盖 |
+| 需要二次检索的问题 | 较明显 | 检索反馈可弥补初次证据不足 |
+| 需要计算、表格或代码工具的任务 | 较明显 | 工具调用可提供普通 RAG 无法直接完成的执行能力 |
+| 简单事实问答 | 收益有限 | 普通 RAG 已能较好完成，ARAG 可能增加额外延迟 |
+| 单文档、关键词明确的问题 | 收益有限 | 多轮检索和规划可能不是必要步骤 |
+| 知识库缺失答案的问题 | 收益有限 | ARAG 不能凭空补齐缺失证据，应通过 self-check 暴露无法回答 |
+| 对实时性要求极高的问题 | 可能不适合 | 多轮检索和工具调用会增加响应时间与 Token 成本 |
+
+若 Agentic RAG 的收益主要体现在复杂任务上，则系统可采用“快速路径 + 完整路径”策略：简单任务走普通或 Advanced RAG，复杂任务再触发 Agentic 流程。若 p95 延迟超过预设阈值，应作为性能代价如实报告，而不是强行归为有效。
+
+因此，本课题的执行优先级为：先完成 C0-C4 和核心消融，证明各模块在复杂任务中的基本贡献；再将轻量自适应调度作为后续升级方向，探索如何让简单任务避免过度 Agentic 化，复杂任务再使用完整流程。
+
+### 7.5 综合评分
+
+为便于 Demo 展示，可定义组内综合分：
+
+```text
+Final Score =
+0.20 * 检索质量
++ 0.20 * 答案质量
++ 0.20 * 引用可信度
++ 0.20 * 工具与任务完成
++ 0.20 * 性能效率
+```
+
+该综合分仅用于 Demo 排序展示，不作为主要实验结论，也不宣称为通用行业标准。正式结论以 Recall@5、MRR@10、Answer Correctness、Faithfulness / Citation Accuracy、Tool Call Success、Multi-step Task Completion、Latency、Token Cost 等主指标和消融实验为准。
+
+------
+
+## 八、预期成果
+
+| 成果 | 具体内容 | 验收标准 |
+| :--- | :--- | :--- |
+| 技术验证 Demo | 输入问题、查询改写、检索/rerank、多轮检索、工具调用、self-check、引用和日志展示 | 能稳定演示一条完整 ARAG 技术链路，不追求产品化体验 |
+| 实验知识库与测试集 | 学习资料、技术文档、表格资料、代码片段、40-50 条自建任务、参考答案和证据标注 | 测试集字段完整，正式实验前冻结 |
+| 对比实验报告 | C0-C4 的检索、答案、引用、工具、任务和性能结果 | 至少包含主指标表、消融结果和失败案例 |
+| 公共 Benchmark 参考结果 | BEIR / MIRACL、HotpotQA、ToolBench 或 BFCL 的小规模样例测试 | 给出参考样例表现和结论边界说明 |
+| 开源系统横向对比 | Dify / RAGFlow 与自研 C4 的同题对比 | 使用同一知识库、同一测试任务、尽量相同 LLM |
+| 非规范表达处理分析 | 查询诊断、规范化改写、检索反馈修正的效果 | 展示典型成功与失败样例 |
+| 外部工具调用分析 | 文件读取、代码执行、计算器、表格分析的调用日志和成功率 | 报告 Tool Selection Accuracy 与 Tool Call Success |
+| 适用范围与边界分析 | ARAG 有效任务、收益有限任务、延迟和 Token 成本 | 说明何时值得使用 ARAG，何时普通 RAG 足够 |
+| 轻量自适应升级分析（选做） | C4-Adaptive 与 C4-full 的路径、延迟、Token 和工具调用差异 | 若时间允许，说明如何从原版主线继续升级为自适应 ARAG |
+| 代码与材料归档 | 源代码、配置文件、`pyproject.toml`、`uv.lock`、运行说明、实验日志 | 能通过 `uv sync` 和 `uv run` 复现实验或 Demo |
+| 答辩材料 | 结题报告、PPT、Demo 录屏或现场演示脚本 | 能清楚说明研究问题、方法、实验结果和结论边界 |
+
+------
+
+## 九、任务分工与进度安排
+
+### 9.1 小组分工
+
+| 成员 | 主要职责 | 具体任务 |
+| :--- | :--- | :--- |
+| 成员 A | 方法与统筹 | 设计 C0-C4 与消融配置；实现任务规划、query rewrite、检索反馈和 self-check；撰写报告和 PPT |
+| 成员 B | 数据与评测 | 收集实验知识库材料；构建自建任务集与 Benchmark 参考子集；标注参考答案、证据和工具需求；组织人工评测 |
+| 成员 C | 工程与 Demo | 实现文档解析、检索、4 类主线工具调用、日志、评测脚本、C5 对比配置和技术验证 Demo |
+
+三名成员每周至少进行一次进度同步，统一确认接口、测试集变更、实验配置和失败案例记录。正式实验开始后，测试集、Prompt、模型版本、依赖环境和配置文件均应冻结，并通过 Git Tag 保存版本。
+
+### 9.2 进度安排
+
+| 阶段 | 时间 | 关键任务 | 里程碑 |
+| :--- | :--- | :--- | :--- |
+| 第 1 阶段：定题与准备 | 5.3-5.7 | 开题报告定稿；确定实验知识库、公共 Benchmark 子集和技术栈；搭建环境 | 开题文档提交 |
+| 第 2 阶段：数据与 C0 | 5.8-5.14 | 文档解析、分块、向量库；实现普通 RAG | C0 可运行 |
+| 第 3 阶段：C1/C2 | 5.15-5.21 | 非规范表达处理、query rewrite、BM25、混合检索、rerank | C1/C2 可运行 |
+| 第 4 阶段：C3 与工具函数 | 5.22-5.28 | 完成 Agentic Retrieval RAG；完成文件读取、代码执行、计算器、表格分析 4 类工具的独立函数 | C3 可运行，4 类工具可独立调用 |
+| 第 5 阶段：C4 与测试冻结 | 5.29-6.5 | 将工具选择与工具调用编排接入 C4；冻结自建任务集、Benchmark 子集和 Prompt | C4 可运行，Git Tag v1.0 |
+| 第 6 阶段：正式实验 | 6.6-6.12 | 全量运行 C0-C4、核心消融和 Benchmark 参考子集；收集日志；人工标注 | 结果 CSV 与标注表 |
+| 第 7 阶段：分析与 Demo | 6.13-6.20 | 配置 Dify/RAGFlow 横向参考；统计指标、失败案例、边界分析、Demo 打磨；若 C0-C4 已稳定，补充 C4-Adaptive 轻量路径选择实验 | 图表、案例、C5 对比、Demo；选做 C4-Adaptive 结果 |
+| 第 8 阶段：交付 | 6.21-6.29 | 结题报告、PPT、代码归档、录屏 | 全部材料完成 |
+
+------
+
+## 十、风险分析与应对
+
+| 风险 | 表现 | 应对 |
+| :--- | :--- | :--- |
+| 任务范围过大 | 知识服务任务覆盖过宽，测试集失控 | 自建任务控制在 40-50 条，公共 Benchmark 子集控制在 10-15 条 |
+| 答案标注困难 | 多文档或工具型任务答案难判断 | 所有参考答案必须来自证据或工具输出，争议样例双人复核 |
+| 外部工具实现过难 | 网页搜索不稳定，代码执行有安全风险 | 网页搜索作为选做；代码执行限制白名单、超时和沙箱目录；日程规划不单独实现为工具 |
+| Agentic 流程过慢 | 多轮检索和工具调用导致延迟高 | 限制最多二次检索；记录 p95；设计“快速版”和“完整版” |
+| 工具误调用 | 应查表却调用网页，或应计算却检索 | 设计工具选择规则和错误分类 |
+| C4 提升不明显 | Agentic 流程收益不明显 | 做消融实验和失败归因；如实报告适用范围和收益有限任务 |
+| 自适应升级超出时间 | 路径选择、路径标注和额外指标增加工作量 | C4-Adaptive 仅作为升级方向；若时间不足，只保留“快速路径 + 完整路径”的设计分析，不影响主线验收 |
+| 开源系统参考部署失败 | Dify/RAGFlow 配置耗时 | C5 仅作为参考，不影响核心实验；主统计基于 C0-C4 |
+| 环境复现困难 | 三名成员本地依赖版本不一致 | 使用 uv、`pyproject.toml` 和 `uv.lock` 固定依赖；正式实验前冻结环境 |
+| 模型或 API 不稳定 | 不同时间调用结果波动，或接口不可用 | 固定模型版本、Prompt 和温度参数；保留实验日志；必要时使用本地或备用模型接口 |
+
+------
+
+## 十一、参考文献与资料来源
+
+[1] 110实验室关于开展前沿技术分组研究与专题汇报的通知，2026.
+
+[2] Lewis, P., et al. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. NeurIPS, 2020.
+
+[3] Yao, S., et al. ReAct: Synergizing Reasoning and Acting in Language Models. ICLR, 2023.
+
+[4] Singh, A., et al. Agentic Retrieval-Augmented Generation: A Survey on Agentic RAG. arXiv, 2025.
+
+[5] LangGraph Documentation: Agentic RAG. https://docs.langchain.com/oss/python/langgraph/agentic-rag
+
+[6] RAGAS Documentation: Available Metrics. https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/
+
+[7] Dify GitHub Repository. https://github.com/langgenius/dify
+
+[8] RAGFlow GitHub Repository. https://github.com/infiniflow/ragflow
+
+[9] BAAI BGE-M3 Model Card. https://huggingface.co/BAAI/bge-m3
+
+[10] Saad-Falcon, J., et al. ARES: An Automated Evaluation Framework for Retrieval-Augmented Generation Systems. NAACL, 2024.
+
+[11] Ru, D., et al. RAGChecker: A Fine-grained Framework for Diagnosing Retrieval-Augmented Generation. arXiv:2408.08067, 2024.
+
+[12] Thakur, N., et al. BEIR: A Heterogeneous Benchmark for Zero-shot Evaluation of Information Retrieval Models. NeurIPS, 2021.
+
+[13] Zhang, X., et al. MIRACL: A Multilingual Retrieval Dataset Covering 18 Diverse Languages. TACL, 2023.
+
+[14] Yang, Z., et al. HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question Answering. EMNLP, 2018.
+
+[15] Qin, Y., et al. ToolBench: Towards Benchmarking Large Language Models for Tool Learning. ICLR, 2024.
+
+[16] Berkeley Function Calling Leaderboard. https://gorilla.cs.berkeley.edu/leaderboard.html
