@@ -1136,3 +1136,353 @@ runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
 4. 赵启行汇总 C0/C1/C2 总表：文档命中、Gold chunk 命中、答案正确率、引用准确率、延迟、token。
 5. 李金航解释 C2 三阶段的技术收益、成本变化和失败案例。
 6. C2 人工验收完成后，再判断是否阶段性冻结 C2。
+
+---
+
+## 2026-05-18 C2 Stage3 选择性上下文扩展优化与复盘
+
+记录人：赵启行
+
+阶段：C2 Advanced RAG / Stage3 context expansion 优化复盘。
+
+### 一、背景
+
+唐宁补充 `data/testset/manual_eval_c2.csv` 后，C2 三阶段人工评分显示：
+
+| 配置 | Answer Correctness | Citation Accuracy | 主要问题 |
+| --- | ---: | ---: | --- |
+| `c2_stage1_c1_hybrid` | 0.600 | 0.625 | 部分答案不完整 |
+| `c2_stage2_c1_hybrid_rerank` | 0.800 | 0.800 | 整体最好，仍有少量 partial answer |
+| `c2_stage3_c1_hybrid_rerank_context`（旧版） | 0.150 | 0.200 | `unsupported_refusal` 14/20 |
+
+旧版 Stage3 采用固定邻接扩展：对 Top-K 命中块统一拼接 `±1` 邻接 chunk。该策略能增加上下文，但也会引入不相关内容，导致模型在部分题目中错误判断“证据不足”。因此，本次优化目标不是继续扩大上下文，而是将 Stage3 改为“选择性上下文扩展”。
+
+### 二、优化规则
+
+新版 Stage3 采用以下规则：
+
+1. 只对 `multi_doc`、`fuzzy_query`、`insufficient_evidence` 题型启用上下文扩展。
+2. 不对 `simple_qa`、`calculation`、`code_execution`、`table_analysis` 题型启用上下文扩展。
+3. 只扩展 `rank <= 3` 的命中 chunk。
+4. 只扩展同一 `doc_id` 下的相邻 chunk。
+5. 遇到新的 Markdown 标题边界时停止向后扩展，避免跨小节引入噪声。
+6. 对总上下文字符数设置上限，超过上限时截断或跳过扩展。
+7. citation 仍保留原始命中 `chunk_id`，同时在日志中记录 `expanded_chunk_ids`、`context_expansion_applied` 和 `context_expansion_reason`。
+8. 如果没有触发扩展，则 Stage3 的输出应尽量接近 Stage2。
+
+涉及代码文件：
+
+```text
+src/agentic_rag/rag/context_expand.py
+src/agentic_rag/pipelines/local_rag.py
+src/agentic_rag/schemas.py
+src/agentic_rag/experiment/c2_ablation_metrics.py
+run_c2_retrieval_ablation.py
+tests/test_rerank_context.py
+```
+
+### 三、实验前备份
+
+重跑新版 Stage3 前，旧版 Stage3 输出已备份到：
+
+```text
+archive/experiment_runs/c2_stage3_before_selective_context_2026-05-18_211229/
+```
+
+备份内容包括：
+
+```text
+runs/results/c2_stage3_c1_hybrid_rerank_context_results.csv
+runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
+runs/results/c2_ablation_summary.json
+runs/results/c2_ablation_report.md
+```
+
+说明：`archive/` 属于本地备份目录，默认不提交到 GitHub。
+
+### 四、重跑命令
+
+本次只重跑 Stage3，因为 Stage1 和 Stage2 逻辑未修改：
+
+```powershell
+uv run python run_c2_retrieval_ablation.py --phase 3 --limit 20 --neighbors 1
+```
+
+运行结果：
+
+```text
+题数：20
+error_count：0
+输出文件：
+runs/results/c2_stage3_c1_hybrid_rerank_context_results.csv
+runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
+runs/results/c2_ablation_summary.json
+runs/results/c2_ablation_report.md
+```
+
+运行时脚本自动将旧版 `.kb_embedding_cache.pkl` 迁移到 Chroma 后删除旧 pkl 缓存。这是 C2 脚本的索引缓存迁移行为，不是手动删除实验结果。
+
+### 五、优化前后初步对比
+
+| 配置 | 文档命中 | Gold chunk 命中 | 平均延迟(ms) | 平均 token | 人工 Answer | 人工 Citation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Stage2：hybrid + rerank | 20/20 | 15/20 | 28761 | 12462 | 0.800 | 0.800 |
+| 旧 Stage3：固定邻接扩展 | 20/20 | 15/20 | 27887 | 14462 | 0.150 | 0.200 |
+| 新 Stage3：选择性上下文扩展 | 19/20 | 15/20 | 37057 | 13352 | 待人工评分 | 待人工评分 |
+
+注意：
+
+- 新 Stage3 的 Gold chunk 命中仍为 15/20，与 Stage2 和旧 Stage3 一致。
+- 新 Stage3 的平均 token 为 13352，低于旧 Stage3 的 14462，但仍高于 Stage2。
+- 新 Stage3 的文档命中为 19/20，低于 Stage2 和旧 Stage3 的 20/20，需要后续检查未命中的题目。
+- 由于答案生成存在模型随机性，新 Stage3 是否真正优于旧 Stage3，必须以新的人工评分为准。
+
+### 六、选择性扩展触发情况
+
+新版 Stage3 的 `context_expansion_applied_count` 显示，扩展只发生在以下题目：
+
+| 题号 | task_type | 扩展次数 |
+| --- | --- | ---: |
+| Q005 | `fuzzy_query` | 3 |
+| Q006 | `fuzzy_query` | 3 |
+| Q007 | `fuzzy_query` | 3 |
+| Q008 | `fuzzy_query` | 3 |
+| Q009 | `multi_doc` | 3 |
+| Q010 | `multi_doc` | 3 |
+| Q011 | `multi_doc` | 3 |
+| Q012 | `multi_doc` | 3 |
+| Q020 | `insufficient_evidence` | 3 |
+
+未触发扩展的题型包括：
+
+```text
+simple_qa
+table_analysis
+calculation
+code_execution
+```
+
+这说明选择性触发规则已经生效：Stage3 不再对所有题目无条件做邻接扩展。
+
+### 七、阶段性判断
+
+本次优化已经解决了工程规则层面的问题：
+
+1. Stage3 不再是无条件固定邻接扩展。
+2. 扩展触发与题型边界一致。
+3. 日志和 CSV 中可以追踪每题是否扩展、扩展了哪些 chunk、扩展原因是什么。
+4. token 成本相比旧 Stage3 有所下降。
+
+但目前还不能冻结“新 Stage3 有效”的结论，原因是：
+
+1. 新 Stage3 尚未进行人工 `Answer Correctness` 和 `Citation Accuracy` 标注。
+2. 新 Stage3 的文档命中从 20/20 降到 19/20，需要定位具体退化题。
+3. 新 Stage3 的平均延迟高于 Stage2 和旧 Stage3，需要结合实际答案质量判断是否值得。
+4. Stage2 目前仍是人工评分最好的 C2 配置，不能因为 Stage3 经过优化就默认优于 Stage2。
+
+### 八、下一步
+
+建议建立新的人工评分文件：
+
+```text
+data/testset/manual_eval_c2_stage3_selective.csv
+```
+
+字段沿用：
+
+```csv
+question_id,config,answer_correctness,citation_accuracy,main_problem,comment,reviewer,status
+```
+
+唐宁只需要重新标注新版 Stage3 的 20 题，不需要重标 Stage1 和 Stage2。重点检查：
+
+1. `unsupported_refusal` 是否从旧 Stage3 的 14/20 明显下降。
+2. Answer Correctness 是否恢复到接近 Stage2。
+3. Citation Accuracy 是否恢复。
+4. Q005-Q012、Q020 中选择性扩展是否真的改善答案完整性。
+5. 未触发扩展的 simple/calculation/code/table 题是否基本接近 Stage2。
+6. 新 Stage3 文档命中下降到 19/20 的原因。
+
+最终报告中建议将 Stage3 结论写为：
+
+> 固定邻接式 context expansion 在当前测试集上表现不稳定，甚至会显著降低答案质量；选择性上下文扩展能够降低无效上下文注入，并提供可追踪的扩展日志，但其是否优于 Stage2 rerank 仍需人工评分确认。当前最稳的 C2 主结论仍是 rerank 对检索和答案质量提升最明显。
+
+## 2026-05-18 C3 小批量验证实验记录
+
+### 一、实验目的
+
+本轮实验用于验证 C3 Agentic Retrieval RAG 是否已经具备可运行的基础链路。重点不是冻结 C3 指标，而是检查：任务规划是否能触发、是否调用 RAG 检索工具、是否出现多查询或多 pipeline 行为、gold doc / gold chunk 是否能被覆盖，以及当前 C3 的主要缺陷是什么。
+
+测试题来自：
+
+```text
+data/testset/questions_c3_candidates.csv
+data/testset/references_c3_candidates.csv
+```
+
+题号范围为 Q021-Q030，共 10 题。
+
+### 二、运行前状态
+
+实验前检查：
+
+```powershell
+git status --short --branch
+git log -1 --oneline
+uv run python --version
+uv run pytest tests/test_deep_planning_presets.py tests/test_session_planner_json.py tests/test_runtime_tools.py tests/test_runtime_state.py
+```
+
+记录结果：
+
+```text
+当前分支：main...origin/main
+当前 commit：80667b5 Add files via upload
+Python：3.12.10
+C3 相关测试：13 passed
+```
+
+运行前本地已有 C2 Stage3 优化相关未提交改动，本轮未处理这些改动，也未推送仓库。
+
+### 三、最小修复
+
+第一次运行 Q021-Q030 时，C3 入口在进入规划前失败：
+
+```text
+TypeError: OrchestrationConfig.__init__() got an unexpected keyword argument 'enable_c4_tools'
+```
+
+原因是 `main.py agent --c3` 和 C3/C4 客户端已经按 C3/C4 档位设计传入 `enable_c4_tools`，但 `OrchestrationConfig` 中缺少该字段。随后进行了最小修复：
+
+1. 在 `src/agentic_rag/orchestration/types.py` 中为 `OrchestrationConfig` 增加 `enable_c4_tools: bool = False`。
+2. 在 `src/agentic_rag/orchestration/loop.py` 中将 `cfg.enable_c4_tools` 传给 `build_topic4_deep_agent(...)`。
+3. 在 `compose_layer2_user_message(...)` 中传递 `enable_c4_tools=cfg.enable_c4_tools`，保证 C3 只启用检索工具，C4 才启用外部工具。
+4. 将 `--json` 调试输出改为 `ensure_ascii=True`，避免 Windows GBK 控制台在打印特殊字符时触发 `UnicodeEncodeError`。
+
+修复后验证：
+
+```powershell
+uv run pytest tests/test_deep_planning_presets.py tests/test_session_planner_json.py tests/test_runtime_tools.py tests/test_runtime_state.py
+uv run ruff check src\agentic_rag\orchestration\types.py src\agentic_rag\orchestration\loop.py
+```
+
+结果：
+
+```text
+13 passed
+All checks passed
+```
+
+### 四、运行命令
+
+单题运行命令模板：
+
+```powershell
+uv run python main.py agent --c3 --planning-rewrite --json --once "<题目文本>"
+```
+
+为避免 Windows 控制台编码问题，批量运行时使用：
+
+```powershell
+$env:PYTHONIOENCODING="utf-8"
+$env:PYTHONUTF8="1"
+```
+
+### 五、输出文件
+
+本轮输出：
+
+```text
+runs/results/c3_smoke_results.csv
+runs/logs/c3_agentic_retrieval/run_logs.jsonl
+runs/logs/c3_agentic_retrieval/summary.json
+runs/logs/c3_agentic_retrieval/Q021_console.txt
+...
+runs/logs/c3_agentic_retrieval/Q030_console.txt
+```
+
+两轮失败记录已本地备份到：
+
+```text
+archive/experiment_runs/c3_smoke_failed_before_config_fix_2026-05-18
+archive/experiment_runs/c3_smoke_failed_before_json_encoding_fix_2026-05-18
+```
+
+说明：`archive/` 与 `runs/` 默认不提交仓库。
+
+### 六、结果摘要
+
+最终有效结果：
+
+| 指标 | 结果 |
+| --- | ---: |
+| 总题数 | 10 |
+| 程序级错误 | 0 |
+| RAG 调用 | 10/10 |
+| 多查询 / 多 pipeline 行为 | 10/10 |
+| 平均延迟 | 152038 ms |
+| 平均 gold doc 覆盖率 | 0.9000 |
+| 平均 gold chunk 覆盖率 | 0.6067 |
+
+逐题结果：
+
+| 题号 | 类别 | gold doc 覆盖 | gold chunk 覆盖 | 延迟(ms) |
+| --- | --- | ---: | ---: | ---: |
+| Q021 | 多轮检索 | 2/3 | 1/3 | 138887 |
+| Q022 | 基础验收 | 4/4 | 3/4 | 136057 |
+| Q023 | 多轮检索 | 5/5 | 3/5 | 133619 |
+| Q024 | 基础验收 | 3/3 | 5/6 | 126346 |
+| Q025 | 多轮检索 | 2/3 | 3/6 | 196684 |
+| Q026 | 基础验收 | 3/3 | 4/5 | 114438 |
+| Q027 | 压力测试 | 2/3 | 1/3 | 178996 |
+| Q028 | 基础验收 | 3/3 | 2/4 | 139056 |
+| Q029 | 压力测试 | 2/2 | 2/3 | 282236 |
+| Q030 | 基础验收 | 1/1 | 3/4 | 74062 |
+
+### 七、阶段判断
+
+C3 当前已经可以跑通，并且能体现 C3 的关键行为：
+
+1. 能走 Agent 编排入口。
+2. 能在规划后调用 RAG 工具。
+3. 10 题全部出现多查询或多 pipeline 行为。
+4. gold doc 覆盖率达到 90%，说明文档级证据召回基本可用。
+
+但 C3 还不能冻结，主要问题是：
+
+1. 平均延迟约 152 秒，成本明显偏高。
+2. gold chunk 覆盖率约 60.67%，说明证据精确定位仍不稳定。
+3. Q021、Q025、Q027 的证据覆盖偏弱，复杂拆解和模糊查询仍需优化。
+4. 当前结果尚未进行人工 `Answer Correctness` 和 `Citation Accuracy` 标注。
+5. `c3_smoke_results.csv` 是 smoke test 结果，不等同于正式 C3 批量实验结果。
+
+### 八、下一步
+
+建议唐宁基于以下文件进行人工复核：
+
+```text
+runs/results/c3_smoke_results.csv
+runs/logs/c3_agentic_retrieval/Q021_console.txt
+...
+runs/logs/c3_agentic_retrieval/Q030_console.txt
+```
+
+建议新增人工评分文件：
+
+```text
+data/testset/manual_eval_c3_smoke.csv
+```
+
+字段建议：
+
+```csv
+question_id,answer_correctness,citation_accuracy,planning_quality,retrieval_sufficiency,main_problem,comment,reviewer,status
+```
+
+后续如果人工评分显示 C3 答案质量可接受，再进入正式 C3 批量脚本开发；如果人工评分发现答案质量不稳定，应先优化 planner 子查询拆解、最大调用次数和超时控制。
+
+更详细的 C3 实验复现说明见：
+
+```text
+docs/c3_smoke_experiment_guide.md
+```

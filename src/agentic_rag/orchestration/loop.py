@@ -215,7 +215,7 @@ def _run_single_turn_pipeline(
                 serial.append({"type": m.__class__.__name__, "content": getattr(m, "content", "")})
             except Exception:
                 serial.append(str(m))
-        print(json.dumps({"messages_debug": serial}, ensure_ascii=False, indent=2))
+        print(json.dumps({"messages_debug": serial}, ensure_ascii=True, indent=2))
 
 
 def _orchestrate_until_stable(
@@ -340,6 +340,7 @@ def _orchestrate_until_stable(
                 use_knowledge_base=use_kb,
                 temperature=temperature,
                 sandbox_workspace=sandbox_ws,
+                enable_c4_tools=cfg.enable_c4_tools,
                 additional_tools=extra_agent_tools if extra_agent_tools else None,
             )
 
@@ -358,6 +359,7 @@ def _orchestrate_until_stable(
             orchestration_addon=exec_addon,
             use_knowledge_base=(doc_resolved is None),
             kb_execution_notes=kb_notes,
+            enable_c4_tools=cfg.enable_c4_tools,
         )
 
         verdict: JudgeVerdict | None = None

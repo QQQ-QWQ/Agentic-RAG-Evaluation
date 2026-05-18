@@ -25,6 +25,8 @@ class OrchestrationConfig:
     """若为 True，后续用户每一轮输入都走完整编排（成本高）。"""
     enable_kb_grounding_judge: bool = True
     """参照评测 judge 思路：用检索摘录与模型答复做「有据」核验，供第三层参考。"""
+    enable_c4_tools: bool = False
+    """C3/C4 档位开关：False 仅启用检索工具，True 启用 C4 外部工具。"""
     enable_sandbox_tools: bool = True
     """为 True 且 ``SANDBOX_ENABLED`` 时挂载 ``sandbox_exec_python``（会话临时目录）。"""
     enable_planning_query_rewrite: bool = False
