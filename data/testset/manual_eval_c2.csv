@@ -1,0 +1,63 @@
+﻿question_id,config,answer_correctness,citation_accuracy,main_problem,comment,reviewer,status
+Q001,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Uses indexing and retrieval/generation but does not match the canonical component list and overweights RAG agents.",member_b,human_reviewed
+Q001,c2_stage2_c1_hybrid_rerank,1,1,none,"Covers indexing, retrieval, and generation with citations that support the main claims.",member_b,human_reviewed
+Q001,c2_stage3_c1_hybrid_rerank_context,1,1,none,"Covers embeddings, vector store, retriever, and model, which satisfies the component-count requirement.",member_b,human_reviewed
+Q002,c2_stage1_c1_hybrid,1,0.5,none,"Names the four expected RAGAS metrics, but citations mainly support the metric names rather than the full definitions.",member_b,human_reviewed
+Q002,c2_stage2_c1_hybrid_rerank,1,0.5,none,"Answers the metric names and gives reasonable explanations, but the cited table only partially supports those explanations.",member_b,human_reviewed
+Q002,c2_stage3_c1_hybrid_rerank_context,0,0.5,unsupported_refusal,"Refuses despite retrieving the metric table; the citation is related but does not support the refusal.",member_b,human_reviewed
+Q003,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Mentions low-level infrastructure and integration but misses the stateful-agent focus and clear LangChain dependency relation.",member_b,human_reviewed
+Q003,c2_stage2_c1_hybrid_rerank,1,1,none,"Correctly describes persistent/stateful agent orchestration and the LangChain/LangGraph relationship.",member_b,human_reviewed
+Q003,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Treats the evidence as insufficient even though the retrieved chunks contain the required relationship.",member_b,human_reviewed
+Q004,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Explains FAISS as a similarity-search library but does not clearly connect it to RAG vector indexing and retrieval.",member_b,human_reviewed
+Q004,c2_stage2_c1_hybrid_rerank,1,1,none,"Explains both FAISS's general purpose and its role as RAG vector-store/retrieval infrastructure.",member_b,human_reviewed
+Q004,c2_stage3_c1_hybrid_rerank_context,1,1,none,"Clearly ties FAISS to vector storage and retrieval of relevant document embeddings in RAG.",member_b,human_reviewed
+Q005,c2_stage1_c1_hybrid,1,0.5,none,"Correctly identifies Self-RAG and self-reflection, but the cited evidence only partly supports the mechanism detail.",member_b,human_reviewed
+Q005,c2_stage2_c1_hybrid_rerank,1,1,none,"Correctly identifies Self-RAG and explains reflection tokens and adaptive retrieval.",member_b,human_reviewed
+Q005,c2_stage3_c1_hybrid_rerank_context,0,0,wrong_method,"Answers Agentic RAG instead of the target Self-RAG paper, so both answer and citations miss the intended method.",member_b,human_reviewed
+Q006,c2_stage1_c1_hybrid,1,1,none,"Lists reflection, planning, tool use, and multi-agent collaboration with direct survey support.",member_b,human_reviewed
+Q006,c2_stage2_c1_hybrid_rerank,1,1,none,"Covers the expected Agentic RAG directions and adds workflow/taxonomy framing.",member_b,human_reviewed
+Q006,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses the question even though the retrieved survey chunks contain the required directions.",member_b,human_reviewed
+Q007,c2_stage1_c1_hybrid,0,0.5,partial_answer,"Only recommends RAGFlow, far below the minimum project list required by the rubric.",member_b,human_reviewed
+Q007,c2_stage2_c1_hybrid_rerank,0.5,0.5,partial_answer,"Recommends two projects, but the list is incomplete and one item is outside the target four-project set.",member_b,human_reviewed
+Q007,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Fails to provide a recommendation list and incorrectly treats the available evidence as insufficient.",member_b,human_reviewed
+Q008,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Avoids an absolute claim and mentions Self-RAG, but does not compare three methods by scenario or mechanism.",member_b,human_reviewed
+Q008,c2_stage2_c1_hybrid_rerank,0.5,0.5,partial_answer,"Cautiously compares Self-RAG and A-RAG, but CRAG and scenario-level tradeoffs remain underdeveloped.",member_b,human_reviewed
+Q008,c2_stage3_c1_hybrid_rerank_context,0.5,0.5,partial_answer,"Gives a cautious no-universal-winner answer, but does not explain the expected method-specific strengths.",member_b,human_reviewed
+Q009,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Forms a partial contrast between agentic orchestration and data/context focus, but not the full design comparison.",member_b,human_reviewed
+Q009,c2_stage2_c1_hybrid_rerank,0.5,0.5,partial_answer,"Gives useful positioning differences, but still lacks the precise chain-composition versus index-centric comparison.",member_b,human_reviewed
+Q009,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses the comparison and does not use the available LlamaIndex evidence productively.",member_b,human_reviewed
+Q010,c2_stage1_c1_hybrid,1,1,none,"Correctly contrasts Self-RAG self-reflection with CRAG corrective post-processing.",member_b,human_reviewed
+Q010,c2_stage2_c1_hybrid_rerank,1,1,none,"Clearly explains Self-RAG reflection tokens, CRAG document filtering, and the internal-versus-external distinction.",member_b,human_reviewed
+Q010,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses the comparison despite retrieving relevant Self-RAG and CRAG chunks.",member_b,human_reviewed
+Q011,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Identifies both platforms at a high level but does not fully state the Dify application-platform versus RAGFlow engine distinction.",member_b,human_reviewed
+Q011,c2_stage2_c1_hybrid_rerank,1,1,none,"Clearly distinguishes Dify as a broader LLM application platform and RAGFlow as a RAG-focused engine/context layer.",member_b,human_reviewed
+Q011,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses the comparison despite retrieving Dify and RAGFlow evidence.",member_b,human_reviewed
+Q012,c2_stage1_c1_hybrid,0,0.5,unsupported_refusal,"Retrieves the two paper records but does not produce the required classification-perspective comparison.",member_b,human_reviewed
+Q012,c2_stage2_c1_hybrid_rerank,0.5,0.5,partial_answer,"Identifies one survey's taxonomy dimensions but cannot complete the contrast with the SoK paper.",member_b,human_reviewed
+Q012,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Fails to answer the paper-comparison question and cites chunks that do not support a classification contrast.",member_b,human_reviewed
+Q013,c2_stage1_c1_hybrid,0,0.5,capability_boundary,"Does not perform the allowed manual classification of the paper list, so the type-distribution task remains unfinished.",member_b,human_reviewed
+Q013,c2_stage2_c1_hybrid_rerank,0,0.5,capability_boundary,"Again refuses to classify the paper list and therefore misses the core requirement.",member_b,human_reviewed
+Q013,c2_stage3_c1_hybrid_rerank_context,0,0.5,capability_boundary,"Still does not classify the ten-paper list; context expansion does not solve this aggregation task.",member_b,human_reviewed
+Q014,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Finds only a small subset of the expected RAG improvement directions.",member_b,human_reviewed
+Q014,c2_stage2_c1_hybrid_rerank,0.5,0.5,partial_answer,"Lists several directions, but several are generic categories rather than the expected paper-specific method families.",member_b,human_reviewed
+Q014,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses to summarize the improvement directions despite retrieving relevant paper-list material.",member_b,human_reviewed
+Q015,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Correctly classifies three projects but leaves Dify unresolved, so the four-project classification is incomplete.",member_b,human_reviewed
+Q015,c2_stage2_c1_hybrid_rerank,1,1,none,"Classifies Dify/RAGFlow as RAG platforms and CrewAI/LangGraph as agent frameworks with usable evidence.",member_b,human_reviewed
+Q015,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses the classification despite retrieving evidence for the relevant projects.",member_b,human_reviewed
+Q016,c2_stage1_c1_hybrid,1,1,none,"Computes the Naive RAG and Agentic RAG averages and the 0.1025 difference correctly.",member_b,human_reviewed
+Q016,c2_stage2_c1_hybrid_rerank,1,1,none,"Computes all metric deltas and the average difference correctly.",member_b,human_reviewed
+Q016,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses even though the retrieved table contains the necessary values.",member_b,human_reviewed
+Q017,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Identifies arXiv API and Fetcher but misses the direct urllib request path required for full credit.",member_b,human_reviewed
+Q017,c2_stage2_c1_hybrid_rerank,0.5,0.5,partial_answer,"Captures API and Fetcher evidence, but does not clearly demonstrate the third acquisition method with an example.",member_b,human_reviewed
+Q017,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses the code-analysis question despite retrieving crawler-code chunks.",member_b,human_reviewed
+Q018,c2_stage1_c1_hybrid,0.5,0.5,partial_answer,"Infers save_md parameters and some metadata, but misses part of the function evidence and metadata coverage.",member_b,human_reviewed
+Q018,c2_stage2_c1_hybrid_rerank,1,1,none,"Correctly identifies save_md parameters, function, title/source/time metadata, and content writing.",member_b,human_reviewed
+Q018,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses the function-analysis task despite retrieving the relevant save_md chunk.",member_b,human_reviewed
+Q019,c2_stage1_c1_hybrid,1,1,none,"Computes the C0-to-C2 metric increases correctly and reports the largest gain as context precision/context recall.",member_b,human_reviewed
+Q019,c2_stage2_c1_hybrid_rerank,1,1,none,"Correctly calculates the increases and identifies context precision/context recall as the largest gains.",member_b,human_reviewed
+Q019,c2_stage3_c1_hybrid_rerank_context,0,0,unsupported_refusal,"Refuses despite retrieving the metric table needed for the calculation.",member_b,human_reviewed
+Q020,c2_stage1_c1_hybrid,1,1,none,"Correctly gives an evidence-bounded conclusion and concrete reasons against universal superiority.",member_b,human_reviewed
+Q020,c2_stage2_c1_hybrid_rerank,1,1,none,"Correctly states that current evidence is insufficient for a universal superiority claim and explains why.",member_b,human_reviewed
+Q020,c2_stage3_c1_hybrid_rerank_context,0.5,0.5,partial_answer,"Reaches the cautious conclusion, but the reasons are weaker and less tied to the strongest limitation evidence.",member_b,human_reviewed
+
+

@@ -1,0 +1,11 @@
+question_id,question,task_type,difficulty,required_tool,expected_path,note
+Q021,比较 LangChain、LlamaIndex、LangGraph 三者在“RAG + Agent”场景中的分工关系，并给出一个适合课程项目的组合方案。,multi_doc,hard,none,C3,先分别定位框架角色，再做组合选型
+Q022,"如果课题目标是“低代码原型 + 企业级文档问答 + 可扩展 agent 能力”，Dify、RAGFlow、CrewAI、LangGraph 应该怎么组合选型？",multi_doc,hard,none,C3,要求在多个项目间做约束下的系统选型
+Q023,根据现有论文资料，把 Self-RAG、CRAG、A-RAG、TeaRAG、KG-RAG 按“改进检索 / 改进生成 / 改进效率 / 改进知识结构”重新分组，并说明理由。,multi_doc,hard,none,C3,需要跨多篇论文抽取机制再重组分类
+Q024,从现有资料判断，哪类任务更适合普通 RAG，哪类任务更适合 Agentic RAG？至少给出三类任务和判断依据。,multi_doc,hard,none,C3,考查任务边界判断和证据整合
+Q025,为什么复杂问题不能只靠一次检索？请比较 rerank、Self-RAG 式自反思和 A-RAG 式多轮检索分别在解决什么问题。,multi_doc,hard,none,C3,要求区分排序增强、自我校验和分层多轮检索的角色
+Q026,比较 LangChain 文档里的 RAG chain、RAG agent，以及 Agentic RAG 综述中的多步工作流，它们在处理复杂问题时有什么本质差别？,multi_doc,medium,none,C3,考查从单次调用到多步工作流的层次差异
+Q027,如果用户只说“我想找那种会自己反思、会纠错、还能按步骤查资料的方法”，现有资料最可能对应哪些方法？请逐步缩小范围并说明依据。,fuzzy_query,medium,none,C3,考查模糊需求下的多候选识别与逐步缩小范围
+Q028,如果一个任务同时涉及多源信息、模糊意图和中途可能检错，为什么单轮 RAG 往往不够？请说明 routing、planning 和多轮检索各自解决什么问题。,multi_doc,hard,none,C3,考查复杂任务下 routing planning 多轮检索的必要性
+Q029,根据现有资料，能否证明 SoK（2603.07379）比 Survey（2501.09136）更适合作为项目理论主线？如果不能，证据差在哪？,insufficient_evidence,hard,none,C3,重点考查证据不足时的保守结论
+Q030,根据现有资料，Routing agents、Query planning agents、ReAct agents、Plan-and-execute agents 分别适合在复杂知识服务任务中承担什么角色？,multi_doc,medium,none,C3,要求把多种 agent 角色和复杂任务阶段对应起来
