@@ -92,6 +92,8 @@ EXTENDED_FIELDS = [
     "hybrid",
     "use_rerank",
     "context_neighbor_chunks",
+    "context_expansion_applied_count",
+    "context_expansion_details",
     "retrieval_query_count",
     "gold_chunk_hit",
     "gold_chunk_rank",
@@ -179,6 +181,7 @@ def run_variant(
                 question,
                 prompt_file=C1_PROMPT,
                 question_id=qid,
+                task_type=question_row.get("task_type", ""),
                 **common,
             )
         else:
@@ -186,6 +189,7 @@ def run_variant(
                 index,
                 question,
                 question_id=qid,
+                task_type=question_row.get("task_type", ""),
                 **common,
             )
         patched = deepcopy(result)

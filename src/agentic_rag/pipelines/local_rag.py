@@ -307,11 +307,24 @@ def build_citations(hits: list[EvidenceChunk]) -> list[dict[str, str]]:
     return [{"doc_id": hit.doc_id, "chunk_id": hit.chunk_id} for hit in hits]
 
 
+def build_context_expansion_summary(hits: list[EvidenceChunk]) -> list[dict[str, Any]]:
+    return [
+        {
+            "chunk_id": hit.chunk_id,
+            "applied": hit.context_expansion_applied,
+            "expanded_chunk_ids": hit.expanded_chunk_ids or [hit.chunk_id],
+            "reason": hit.context_expansion_reason,
+        }
+        for hit in hits
+    ]
+
+
 def run_c0_with_index(
     index: SimpleVectorIndex,
     question: str,
     *,
     question_id: str = "",
+    task_type: str = "",
     top_k: int = 5,
     system_prompt: str | None = None,
     log_dir: str | Path | None = None,
@@ -348,6 +361,9 @@ def run_c0_with_index(
             hits,
             index,
             neighbors=context_neighbor_chunks,
+            selective=context_neighbor_chunks > 0,
+            task_type=task_type,
+            question=question,
         )
         answer, answer_usage = generate_answer_from_hits(
             question,
@@ -366,6 +382,7 @@ def run_c0_with_index(
         "retrieved_chunks": [hit.to_dict() for hit in hits],
         "answer": answer,
         "citations": build_citations(hits),
+        "context_expansion": build_context_expansion_summary(hits),
         "latency_ms": latency_ms,
         "token_usage": {
             "ark_volcengine_embedding": ark_embedding_usage,
@@ -386,6 +403,7 @@ def run_c1_with_index(
     question: str,
     *,
     question_id: str = "",
+    task_type: str = "",
     top_k: int = 5,
     prompt_file: str | Path | None = None,
     system_prompt: str | None = None,
@@ -431,6 +449,9 @@ def run_c1_with_index(
             hits,
             index,
             neighbors=context_neighbor_chunks,
+            selective=context_neighbor_chunks > 0,
+            task_type=task_type,
+            question=question,
         )
         answer, answer_usage = generate_answer_from_hits(
             question,
@@ -456,6 +477,7 @@ def run_c1_with_index(
         "answer": answer,
         "query_rewrite_model_raw": rewrite_result.raw_output,
         "citations": build_citations(hits),
+        "context_expansion": build_context_expansion_summary(hits),
         "latency_ms": latency_ms,
         "token_usage": {
             "ark_volcengine_embedding": ark_embedding_usage,

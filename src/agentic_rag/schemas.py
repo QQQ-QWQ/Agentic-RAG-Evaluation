@@ -40,6 +40,9 @@ class EvidenceChunk:
     page: int | None = None
     rank: int | None = None
     query: str = ""
+    expanded_chunk_ids: list[str] = field(default_factory=list)
+    context_expansion_applied: bool = False
+    context_expansion_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

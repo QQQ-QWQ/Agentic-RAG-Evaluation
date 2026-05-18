@@ -58,6 +58,10 @@ def row_extend_ablation(
         pass
     rq = result.get("retrieval_queries") or []
     rerank_u = (result.get("token_usage") or {}).get("rerank") or {}
+    context_expansion = result.get("context_expansion") or []
+    applied_count = 0
+    if isinstance(context_expansion, list):
+        applied_count = sum(1 for item in context_expansion if isinstance(item, dict) and item.get("applied"))
     out = dict(base_row)
     out.update(
         {
@@ -65,6 +69,8 @@ def row_extend_ablation(
             "hybrid": hybrid,
             "use_rerank": use_rerank,
             "context_neighbor_chunks": context_neighbor_chunks,
+            "context_expansion_applied_count": applied_count,
+            "context_expansion_details": json.dumps(context_expansion, ensure_ascii=False),
             "retrieval_query_count": len(rq),
             "gold_chunk_hit": gold_chunk_status(reference_row, top_ids),
             "gold_chunk_rank": gold_chunk_rank(reference_row, top_ids),
