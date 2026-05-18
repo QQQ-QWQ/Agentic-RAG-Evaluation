@@ -80,16 +80,23 @@ def run_orchestration_turn(
                 }
     except Exception as exc:
         stop = "error"
-        emit("error", str(exc))
-        tr.mark("orchestration_error", error=str(exc))
+        err_msg = f"{type(exc).__name__}: {exc}"
+        emit("error", err_msg)
+        tr.mark("orchestration_error", error=err_msg)
         latency = int((time.perf_counter() - t0) * 1000)
+        partial = buf.getvalue()
+        err_block = (
+            "\n--- 编排异常（第二层或第三层未完整执行）---\n"
+            f"{err_msg}\n"
+        )
+        transcript = (partial + err_block) if partial.strip() else err_block.strip()
         return SubmitResult(
-            assistant_text=buf.getvalue(),
+            assistant_text=transcript.strip(),
             events=events,
             usage=TurnUsage(latency_ms=latency),
             stop_reason=stop,
             raw_state=raw_state,
-            transcript=buf.getvalue(),
+            transcript=transcript,
         )
 
     tr.mark("orchestration_end")

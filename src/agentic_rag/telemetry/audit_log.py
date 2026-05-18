@@ -45,8 +45,8 @@ def reset_audit_session_id(token: contextvars.Token[str]) -> None:
 
 
 def get_audit_session_id() -> str:
-    sid = _audit_session_id.get()
-    return sid or "anonymous"
+    sid = (_audit_session_id.get() or "").strip()
+    return sid if sid else "anonymous"
 
 
 def audit_log(
@@ -57,7 +57,7 @@ def audit_log(
     log_path: Path | None = None,
 ) -> str:
     """
-    追加一条审计记录。返回写入的文件路径。
+    追加一条审计记录到 ``global_audit.jsonl``。返回写入的文件路径。
     """
     path = log_path or default_audit_log_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,6 +70,25 @@ def audit_log(
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
     return str(path)
+
+
+def audit_record(
+    event: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    session_id: str | None = None,
+) -> dict[str, str]:
+    """
+    同时写入全局审计与会话 ``trace.jsonl``（推荐用于编排/工具追踪）。
+
+    返回 ``{"global": path, "trace": path}``。
+    """
+    sid = session_id or get_audit_session_id()
+    from agentic_rag.telemetry.session_trace import append_session_trace
+
+    trace_path = append_session_trace(sid, event, payload)
+    global_path = audit_log(event, payload=payload, session_id=sid)
+    return {"global": global_path, "trace": trace_path}
 
 
 def audit_log_path_hint() -> str:
