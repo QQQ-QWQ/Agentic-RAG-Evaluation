@@ -1,7 +1,7 @@
 """
 使用 Microsoft MarkItDown 将本地文件转为 Markdown 文本。
 
-- 路径必须落在 ``project_root`` 内（与 ``topic4_kb_ingest`` 一致的安全边界）。
+- 路径必须落在 ``project_root`` 内（由 ``topic4_file_read`` 在工程根内分支调用）。
 - 不替代 ``documents.parse_path``：RAG 切块仍走既有解析链；本模块供 **Agent 工具**按需读取 Office/PDF 等。
 
 官方仓库：<https://github.com/microsoft/markitdown>

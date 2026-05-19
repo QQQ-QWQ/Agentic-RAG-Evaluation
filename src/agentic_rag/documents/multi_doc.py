@@ -25,23 +25,84 @@ _DATA_REL = re.compile(
     re.IGNORECASE,
 )
 
+RETRIEVAL_FULL_KB = "full_kb"
+RETRIEVAL_EPHEMERAL_ONLY = "ephemeral_only"
+RETRIEVAL_FULL_KB_AND_EPHEMERAL = "full_kb_and_ephemeral"
+
+RETRIEVAL_MODE_LABELS: dict[str, str] = {
+    RETRIEVAL_FULL_KB: "仅系统全库（Chroma）",
+    RETRIEVAL_EPHEMERAL_ONLY: "仅本会话附加文件（临时索引）",
+    RETRIEVAL_FULL_KB_AND_EPHEMERAL: "全库 + 附加文件（推荐）",
+}
+
+
+def normalize_retrieval_mode(mode: str | None, *, has_attachments: bool) -> str:
+    """校验检索范围；有附加文件且未指定时默认「全库+附加」。"""
+    if not has_attachments:
+        return RETRIEVAL_FULL_KB
+    raw = (mode or "").strip().lower()
+    if raw in (
+        RETRIEVAL_FULL_KB,
+        RETRIEVAL_EPHEMERAL_ONLY,
+        RETRIEVAL_FULL_KB_AND_EPHEMERAL,
+    ):
+        return raw
+    if raw in ("combined", "merge", "both", "full+ephemeral"):
+        return RETRIEVAL_FULL_KB_AND_EPHEMERAL
+    return RETRIEVAL_FULL_KB_AND_EPHEMERAL
+
 
 @dataclass
 class SessionDocumentScope:
-    """会话检索范围：``doc_ids`` 为空表示 Chroma 全库；非空则仅检索这些文档。"""
+    """
+    会话检索范围：
+
+    - ``use_ephemeral``：本会话附加文件的内存索引（不写全库 Chroma）。
+    - ``retrieval_mode``：``full_kb`` / ``ephemeral_only`` / ``full_kb_and_ephemeral``。
+    - 否则 ``doc_ids`` 为空 → 全库；非空 → Chroma 子集。
+    """
 
     doc_ids: list[str] = field(default_factory=list)
+    retrieval_mode: str = RETRIEVAL_FULL_KB
     source_paths: list[Path] = field(default_factory=list)
     ingest_report: dict[str, Any] = field(default_factory=dict)
     inspect_markdown: str = ""
+    use_ephemeral: bool = False
+    ephemeral_meta: dict[str, Any] = field(default_factory=dict)
+    ephemeral_index: Any = None  # SimpleVectorIndex，仅 use_ephemeral 时非空
 
     @property
     def use_full_kb(self) -> bool:
-        return not self.doc_ids
+        return (
+            not self.doc_ids
+            and not self.use_ephemeral
+            and self.retrieval_mode == RETRIEVAL_FULL_KB
+        )
+
+    @property
+    def combine_ephemeral_with_full_kb(self) -> bool:
+        return (
+            self.use_ephemeral
+            and self.retrieval_mode == RETRIEVAL_FULL_KB_AND_EPHEMERAL
+        )
 
     def summary_for_ui(self) -> str:
+        if self.use_ephemeral and self.combine_ephemeral_with_full_kb:
+            n = self.ephemeral_meta.get("chunk_count", "?")
+            return (
+                "检索范围：**系统全库 Chroma + 本会话附加临时索引**（单次 RAG 融合检索）\n"
+                f"- 附加文件数：{self.ephemeral_meta.get('file_count', len(self.source_paths))}\n"
+                f"- 附加块数：{n}"
+            )
+        if self.use_ephemeral:
+            n = self.ephemeral_meta.get("chunk_count", "?")
+            return (
+                "检索范围：**仅本会话临时索引**（未写入 documents.csv / 全库 Chroma）\n"
+                f"- 文件数：{self.ephemeral_meta.get('file_count', len(self.source_paths))}\n"
+                f"- 块数：{n}"
+            )
         if self.use_full_kb:
-            return "检索范围：Chroma 全库（data/processed/documents.csv）"
+            return "检索范围：Chroma 全库（系统知识库，见 data/processed/documents.csv）"
         names = ", ".join(self.doc_ids[:8])
         if len(self.doc_ids) > 8:
             names += f" … 共 {len(self.doc_ids)} 篇"
@@ -155,12 +216,16 @@ def build_session_document_scope(
     *,
     paths_text: str | None = None,
     explicit_paths: list[Path] | None = None,
-    ingest_to_chroma: bool = True,
+    ingest_to_chroma: bool = False,
+    retrieval_mode: str | None = None,
+    session_id: str | None = None,
     project_root: Path | None = None,
 ) -> SessionDocumentScope:
     """
-    解析路径 →（可选）批量入库 Chroma → 返回本会话 doc_id 子集。
-    无路径时返回全库范围。
+    解析路径 → 会话临时索引（默认）或（已废弃默认）全库入库。
+
+    客户端附加文件：**不**写入 ``documents.csv``，仅 ``build_ephemeral_session_index``。
+    无路径时返回系统全库检索范围。
     """
     root = (project_root or app_config.PROJECT_ROOT).resolve()
     tokens: list[str] = []
@@ -178,6 +243,19 @@ def build_session_document_scope(
     if errors and not resolved:
         return SessionDocumentScope(
             ingest_report={"ok": False, "errors": errors},
+        )
+
+    mode = normalize_retrieval_mode(
+        retrieval_mode,
+        has_attachments=True,
+    )
+    if mode == RETRIEVAL_FULL_KB:
+        warnings = list(errors)
+        warnings.append("检索范围为仅系统全库：未对附加文件建立临时索引。")
+        return SessionDocumentScope(
+            source_paths=resolved,
+            retrieval_mode=RETRIEVAL_FULL_KB,
+            ingest_report={"ok": True, "warnings": warnings},
         )
 
     if ingest_to_chroma:
@@ -209,23 +287,39 @@ def build_session_document_scope(
         new_ids: list[str] = []
         if to_ingest:
             batch = ingest_files_to_kb_batch(
-                root, to_ingest, source_note="客户端多文档入库"
+                root, to_ingest, source_note="CLI/legacy 全库入库"
             )
             new_ids = list(batch.get("doc_ids") or [])
             ingest_report.update(batch)
 
         doc_ids = list(dict.fromkeys([*reused_ids, *new_ids]))
-        display_paths = resolved
         return SessionDocumentScope(
             doc_ids=doc_ids,
-            source_paths=display_paths,
+            source_paths=resolved,
             ingest_report=ingest_report,
-            inspect_markdown="",  # 由 prepare_document_scope_from_input 填充
+            inspect_markdown="",
         )
 
-    doc_ids = lookup_doc_ids_for_paths(resolved, root)
+    # 默认：会话临时索引（不写全库）
+    from agentic_rag.documents.session_index import build_ephemeral_session_index
+
+    label = (session_id or "session")[:16]
+    index, ep_meta = build_ephemeral_session_index(
+        resolved, session_label=label
+    )
+    if not ep_meta.get("ok"):
+        return SessionDocumentScope(
+            source_paths=resolved,
+            ingest_report={"ok": False, "errors": errors, **ep_meta},
+        )
+    if errors:
+        ep_meta.setdefault("warnings", []).extend(errors)
+
     return SessionDocumentScope(
-        doc_ids=doc_ids,
         source_paths=resolved,
-        ingest_report={"ok": bool(doc_ids), "errors": errors},
+        ingest_report={"ok": True, "mode": "ephemeral", "retrieval_mode": mode, **ep_meta},
+        use_ephemeral=True,
+        retrieval_mode=mode,
+        ephemeral_meta=ep_meta,
+        ephemeral_index=index,
     )

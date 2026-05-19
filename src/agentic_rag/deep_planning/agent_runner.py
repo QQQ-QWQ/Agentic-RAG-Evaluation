@@ -50,7 +50,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 
 【本层职能边界 — 你必须遵守】
 - 第一层已给出规划摘要与用户原文要点；你负责落实：用工具完成检索、入库、（可选）沙箱跑代码。你不替代第一层重复输出完整 JSON 规划，但若发现路径/任务理解明显错误，可在答复中说明并仍按可用工具尽力执行。
-- 「解析」职责：从用户原文与第一层 plan_for_layer2 中识别：要问什么问题（写入 topic4_rag_query 的 question）、是否需要把某工程内文件入库（topic4_kb_ingest）、是否需先把 Office/PDF 等转成 Markdown 再推理（topic4_file_to_markdown）、是否要验证代码片段（sandbox_exec_python）。路径必须落在工程根目录内方可入库或转 Markdown。
+- 「解析」职责：从用户原文与第一层 plan_for_layer2 中识别：要问什么问题（写入 topic4_rag_query 的 question）、是否需要读本地文件（topic4_file_read）、是否需要入库（topic4_file_ingest）、是否要验证代码片段（sandbox_exec_python）。读盘与入库由 Agent 动态决定何时调用，与 Firecrawl 抓网页同理。
 - 所有可执行动作仅通过下列工具完成；不要假装已执行。
 
 默认检索范围：工程 Chroma「全库知识库」（data/processed/documents.csv）；若系统提示已绑定单文件，则该文件范围优先。
@@ -58,9 +58,13 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 可用工具：
 - topic4_list_rag_pipelines：列出管线名称。
 - topic4_rag_query：向知识库或绑定文档提问；pipeline 选管线 id。
-- topic4_kb_ingest：工程内文件登记入全库并重建索引。
-- topic4_file_to_markdown：用 Microsoft MarkItDown 将工程内 PDF/Office/HTML 等转为 Markdown 文本（路径须在工程根内；大文件有字节上限）。
+- topic4_file_read：读取本地磁盘路径（工程根内 MarkItDown，根外只读）；返回 topic4.tool.v1 JSON，正文在 data.text。
+- topic4_file_ingest：把本地文件纳入全库（盘外会复制到 data/raw/user_docs/）并重建索引。
+- topic4_firecrawl_scrape / topic4_firecrawl_search（需 FIRECRAWL_API_KEY）：抓取 http(s) 或搜索网页；**不能读本地文件**。
+- topic4_firecrawl_scrape_to_kb：抓取网页并写入知识库（重建索引）。
 - sandbox_exec_python（若已启用）：隔离目录执行 Python，验证代码。
+
+系统会在消息中预解析用户原文里的链接与本地路径；优先按【系统解析到的链接】调用 firecrawl_scrape。
 
 执行要求：
 1. 可配合 write_todos 拆解步骤。
@@ -75,7 +79,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT_C3 = """\
 
 【本层职能边界 — 你必须遵守】
 - 第一层已给出规划摘要；你负责通过 **检索工具** 从知识库获取证据并作答。
-- 当前 **禁止** 调用入库、MarkItDown、沙箱等外部工具（本模式未注册这些工具）。
+- 当前 **禁止** 调用 Firecrawl、读本地文件、入库、MarkItDown、沙箱（本模式未注册）。
 - 所有可执行动作仅通过下列工具完成；不要假装已执行。
 
 默认检索范围：工程 Chroma 全库；若已绑定单文件，则该文件范围优先。
@@ -137,7 +141,25 @@ def build_topic4_deep_agent(
         base = DEFAULT_AGENT_SYSTEM_PROMPT
     else:
         base = DEFAULT_AGENT_SYSTEM_PROMPT_C3
-    if resolved_kb:
+    from agentic_rag.experiment.session_rag import (
+        get_combine_ephemeral_with_kb,
+        get_ephemeral_session_index,
+    )
+
+    if get_ephemeral_session_index() is not None and get_combine_ephemeral_with_kb():
+        sys_msg = (
+            base
+            + "\n\n【本会话检索范围】**系统 Chroma 全库 + 附加文件临时索引**（"
+            "topic4_rag_query 单次调用会融合两路检索结果）。"
+            "勿对附加文件调用 topic4_file_ingest。"
+        )
+    elif get_ephemeral_session_index() is not None:
+        sys_msg = (
+            base
+            + "\n\n【本会话检索范围】**仅临时索引**（附加文件，未写入全库 Chroma）。"
+            "请用 topic4_rag_query；勿对附加文件调用 topic4_file_ingest。"
+        )
+    elif resolved_kb:
         if kb_doc_ids:
             ids = ", ".join(kb_doc_ids)
             sys_msg = (

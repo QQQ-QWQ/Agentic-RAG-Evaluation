@@ -3,8 +3,10 @@ Topic4 仓库统一 CLI 入口。
 
 用法概览::
 
-    uv run python main.py                         # 集成工作台：[1]配置偏好 [4]单文档RAG（无 C0/C1 菜单）
+    uv run python main.py                         # 集成工作台：[1]配置 [4]单文档RAG [5]C3/C4客户端
     uv run python main.py hub                     # 同上
+    uv run python main.py client                  # C3/C4 客户端（Gradio；可选全库+附加组合检索）
+    uv run python main.py client --console --c4   # 终端 C4；--retrieval-mode full_kb_and_ephemeral
     uv run python main.py chat -p "你好"          # 仅 DeepSeek，跳过工作台
     uv run python main.py rag <文档> <问题>
     uv run python main.py agent [可选单文档路径] [--once-file F] [--stdin] [--single-line] [--orchestrate-repeat]  # 单次注入默认不重跑编排；需研判重复时加 --orchestrate-repeat
@@ -28,8 +30,9 @@ Topic4 仓库统一 CLI 入口。
 
 from __future__ import annotations
 
-from agentic_rag.cli.app import main
-
-
 if __name__ == "__main__":
-    main()
+    import sys
+
+    from agentic_rag.runtime.entrypoints.cli_router import route_to_main
+
+    raise SystemExit(route_to_main(sys.argv[1:]))

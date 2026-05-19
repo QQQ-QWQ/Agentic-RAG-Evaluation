@@ -81,13 +81,13 @@ def kb_execution_notes_for_layer2(
         if reg:
             lines.append(
                 f"- 单文件 `{rel_s}` **已在** `documents.csv` 中登记。"
-                "若用户仅检索/问答，一般 **无需** 再调 `topic4_kb_ingest`；"
+                "若用户仅检索/问答，一般 **无需** 再调 `topic4_file_ingest`；"
                 "除非用户明确要求更新文档或替换清单行。"
             )
         else:
             lines.append(
                 f"- 单文件 `{rel_s}` **未在** `documents.csv` 中登记。"
-                "若需纳入全库向量索引，可调用 `topic4_kb_ingest`（路径须在工程根内）。"
+                "若需纳入全库向量索引，可调用 `topic4_file_ingest`（盘外路径会复制进工程）。"
             )
     elif plan_document_path_str and str(plan_document_path_str).strip():
         p = str(plan_document_path_str).strip()

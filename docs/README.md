@@ -39,7 +39,8 @@
 | `c3_smoke_experiment_guide.md` | 2026-05-18 | C3 小批量验证实验说明：Q021-Q030 运行方式、输出文件、结果摘要、人工复核要求。 |
 | `evaluation_ai_judge.md` | 已建立 | 独立 AI 评判（LLM-as-judge）模块定位、字段与与人评对齐说明。 |
 | `ARCHITECTURE.md` | 持续更新 | 包结构、模块职责、**`main.py client` / Runtime / 审计线**；§5 修订记录。 |
-| `agent_runtime_architecture.md` | 2026-05-17 | Agent Runtime 骨架、`QueryEngine` 与 C3/C4 客户端关系、完成度与日志双线。 |
+| `agent_runtime_architecture.md` | 2026-05-17–18 | Agent Runtime 骨架、`QueryEngine` 与 C3/C4 客户端；C4 Firecrawl / `topic4_file_*` 完成度。 |
+| `experiment_stage_and_code_ownership.md` | 持续 | C0–C4 YAML 与 A/B 线代码归属；§4.5 对齐 C4 Agent 工具表。 |
 
 说明：原 `team_roles.md` 的成员分工内容已经合并进 `collaboration_workflow.md`，后续不再单独维护 `team_roles.md`。
 
@@ -65,9 +66,10 @@
 - `references.csv` 中的 `evidence_chunk_id` 尚未补齐，正式 chunk 级指标还不能计算。
 - C0/C1 的人工答案质量评分、引用可信度评分和失败案例分析尚未完成。
 - C2 检索链路（BM25、混合检索、rerank、邻接上下文）已在代码中实现；**2026-05-06** 由李金航完成首轮 **C2 三阶段消融**跑通，记录见 `experiment_notes.md` 同日期条目，结果见 `runs/results/c2_*`。
-- **C3/C4 统一客户端**（`main.py client`）已接入三层编排、多文档入库与 doc_id 子集检索；详见 `ARCHITECTURE.md` §2.10 与 `experiment_notes.md` 2026-05-17 条目。
+- **C3/C4 统一客户端**（`main.py client`）：2026-05-17 多文档入库、Runtime、`doc_id` 子集检索（`experiment_notes` / `ARCHITECTURE` §2.10–2.12）。
+- **2026-05-18**：C4 对称工具族 — Firecrawl 网页 + `topic4_file_read`/`topic4_file_ingest` 本地读盘与入库（第二层动态调用）；C3 仍仅检索工具。
 - C3 在客户端侧为「仅检索工具」的 Agent 编排；完整课题指标仍以批量实验与评测为准。
-- C4 已具备入库、MarkItDown、可选本地沙箱工具；对话内附件/URL、计算器等仍待扩展。
+- 仍待：Gradio 对话内附件上传、规划前改写 UI；计算器等扩展见 `experiment_notes` 待办。
 - 正式测试集、公共 Benchmark 参考子集和 Dify/RAGFlow 横向对比尚未开始。
 
 ## 4. 后续需要补充的文档

@@ -117,15 +117,17 @@ C2 消融脚本通过**代码里各 phase 的 kwargs** 打开 hybrid / rerank / 
 - `configs/c3_agentic_retrieval.yaml`、`configs/c4_tool_augmented.yaml`：**规格与日志字段设计**为主；完整行为需在 `runner` / `local_rag` 或独立 orchestrator 中实现后才能称「代码遵循 YAML」。
 - `prompts/self_check_prompt.md`：YAML 中 C3 的 self-check 引用；是否在**同一条** `run_c1_with_index` 路径里调用，以实际 `local_rag` 实现为准（当前以检索+生成为主）。
 
-### 4.5 「C4 工具」与 Agent 线
+### 4.5 「C4 工具」与 Agent 线（2026-05-18 起）
 
 | 路径 | 说明 |
 |------|------|
-| `src/agentic_rag/deep_planning/tools_factory.py` | LangChain 工具：RAG、入库、MarkItDown、可选沙箱等 |
-| `src/agentic_rag/tools/` | MarkItDown 等 |
-| `src/agentic_rag/orchestration/`、`src/agentic_rag/deep_planning/agent_runner.py` 等 | **B 线**编排与研判 |
+| `src/agentic_rag/deep_planning/tools_factory.py` | C3：仅 `topic4_list_rag_pipelines` + `topic4_rag_query`。C4 另注册下表工具。 |
+| `src/agentic_rag/tools/file_tool.py` | **`topic4_file_read`** / **`topic4_file_ingest`**（读盘 + 入库；MarkItDown 为根内读取后端） |
+| `src/agentic_rag/tools/firecrawl_tool.py` | **`topic4_firecrawl_scrape`** / `search` / `scrape_to_kb`（需 `FIRECRAWL_API_KEY`） |
+| `src/agentic_rag/tools/markitdown_tool.py` | 工程根内转 Markdown；不单独作为 Agent 工具名暴露 |
+| `src/agentic_rag/orchestration/`、`session_planner.py`、`agent_runner.py` | **B 线**编排；L1 填 `web_urls`/`local_paths`，L2 动态调工具 |
 
-这与 `c4_tool_augmented.yaml` 里列举的工具名**概念对齐**，但具体工具列表与 YAML 逐项可能不完全相同，以 `tools_factory` 为准。
+这与 `c4_tool_augmented.yaml` 里「外部工具」**概念对齐**；以 `tools_factory.build_topic4_rag_tools(enable_c4_tools=…)` 为准。详见 `docs/experiment_notes.md` **2026-05-17**（客户端）与 **2026-05-18**（工具对称化）。
 
 ### 4.6 评测与档位无关
 

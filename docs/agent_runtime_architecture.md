@@ -79,7 +79,9 @@ uv run python main.py --version
 | 多文档 doc_id 子集检索 | ✅ | `kb_doc_ids` → `run_knowledge_base_rag(allowed_doc_ids=…)` |
 | 传入文件检查 / 重复内容跳过入库 | ✅ | `ingest_inspector` + `build_session_document_scope` |
 | 全局审计 JSONL | ✅ | `telemetry/`；与实验 `run_logs.jsonl` 分离 |
-| 对话内附件 / URL 抓取 | ❌ | 须在「开始会话」路径框登记本地文件；无 `fetch_url` 工具 |
+| 对话内附件上传 | ❌ | 须在「开始会话」路径框登记本地文件 |
+| C4 网页 URL（Agent 动态） | ✅ | `topic4_firecrawl_*`（需 `FIRECRAWL_API_KEY`）；L1 预解析 `web_urls` |
+| C4 本地读盘 / 入库（Agent 动态） | ✅ | `topic4_file_read` / `topic4_file_ingest`；L1 `local_paths` |
 | Gradio「规划前改写」开关 | ⏳ | `enable_planning_query_rewrite` 默认关；`main.py agent --planning-rewrite` 已支持 |
 | 细粒度 query 迭代（tool_result 回灌事件） | ⏳ | 仍依赖 Deep Agents 内部循环 |
 
@@ -110,4 +112,6 @@ uv run python main.py --version
 
 | 日期 | 摘要 |
 |------|------|
-| 2026-05-17 | 对齐 `c34_client`、多文档入库、审计线、`ingest_inspector` 去重；补充完成度表与日志双线说明。 |
+| 2026-05-19 | 系统库 `kb sync`/`reset`；客户端附加文件走临时索引；审计 `kb_*`、`session_scope_ready`。 |
+| 2026-05-18 | `governance` 同步 `topic4_file_*` / Firecrawl 工具名；C4 外部工具与 `tools_factory` 对称化（见 `experiment_notes` 2026-05-18）。 |
+| 2026-05-17 | 对齐 `c34_client`、多文档入库、审计线、`ingest_inspector` 去重；补充完成度表与日志双线说明；Git `547f8ae`。 |

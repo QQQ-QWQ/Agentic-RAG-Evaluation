@@ -35,6 +35,8 @@ class OrchestrationConfig:
     """改写提示词；默认 ``<PROJECT_ROOT>/prompts/query_rewrite_prompt.md``（由调用方解析）。"""
     enable_kb_inventory_hints: bool = True
     """为 True 时在第二层消息中附加 ``documents.csv`` 登记状态（确定性事实，非模型猜测）。"""
+    enable_c4_tools: bool = False
+    """False = C3（仅 ``topic4_rag_query`` 等检索工具）；True = C4（入库、MarkItDown、可选沙箱）。"""
 
 
 @dataclass

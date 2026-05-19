@@ -21,14 +21,14 @@ def test_c3_tool_specs_count():
 
 
 def test_filter_denies_c4_when_c3():
-    tools = [_FakeTool("topic4_rag_query"), _FakeTool("topic4_kb_ingest")]
+    tools = [_FakeTool("topic4_rag_query"), _FakeTool("topic4_file_ingest")]
     out = filter_tools_by_deny_rules(
         tools,
         permissions=PermissionState(enable_c4_tools=False),
     )
     names = [t.name for t in out]
     assert "topic4_rag_query" in names
-    assert "topic4_kb_ingest" not in names
+    assert "topic4_file_ingest" not in names
 
 
 def test_assemble_dedup_sort():

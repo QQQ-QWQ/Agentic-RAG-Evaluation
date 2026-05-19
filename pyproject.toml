@@ -17,6 +17,7 @@ dependencies = [
 [dependency-groups]
 agent = [
     "deepagents>=0.5.9",
+    "firecrawl-py>=2.0",
     "langchain-openai>=1.2.1",
     "markitdown>=0.1.5",
 ]

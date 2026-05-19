@@ -483,3 +483,142 @@ Final Score =
 [15] Qin, Y., et al. ToolBench: Towards Benchmarking Large Language Models for Tool Learning. ICLR, 2024.
 
 [16] Berkeley Function Calling Leaderboard. https://gorilla.cs.berkeley.edu/leaderboard.html
+
+------
+
+## 十二、仓库开发与实验
+
+```text
+ARK_API_KEY=your_key_here
+DEEPSEEK_API_KEY=your_key_here
+```
+
+注意：
+
+- `.env` 不能提交到 GitHub。
+- 不要把 API Key 写进 Markdown、CSV、日志截图或聊天记录。
+- 所有脚本尽量使用 `uv run python ...` 运行。
+
+## 产品入口（C3/C4 与检索范围）
+
+系统知识库由 `data/raw` 经 **`main.py kb sync`** 写入 Chroma（`documents.csv` + `ragkb_kb_*`）。对话侧附加文件默认走**会话临时索引**，可与全库**在一次 `topic4_rag_query` 内融合检索**。
+
+| 入口 | 命令 | 说明 |
+| --- | --- | --- |
+| 集成工作台 | `uv run python main.py` | `[1]` 运行偏好；`[4]` 单文档 RAG（C0/C1）；`[5]` 启动 C3/C4 并选检索范围 |
+| C3/C4 客户端 | `uv run python main.py client` | 浏览器：选 **C3/C4**、**检索范围**、附加路径后开始会话 |
+| 终端客户端 | `uv run python main.py client --console --c3` | 多行对话；可加 `--c4`、`--sandbox` |
+| 组合检索 | `… client --console --c4 --retrieval-mode full_kb_and_ephemeral D:\a.pdf` | 全库 Chroma + 附加文件（默认；有路径且未指定时控制台会提示） |
+| 仅附加 | `… --retrieval-mode ephemeral_only <路径>` | 不查全库 |
+| 仅全库 | 附加路径留空，或 `--retrieval-mode full_kb` | 与批量实验同一索引 |
+| Agent CLI | `uv run python main.py agent --c4` | 与 client 同编排；检索范围由是否绑定文档/临时索引决定 |
+| 知识库维护 | `uv run python main.py kb sync` / `kb reset` | 重建系统全库向量 |
+
+依赖：C3/C4 需 `uv sync --group agent`；`.env` 配置 `DEEPSEEK_API_KEY`、`ARK_API_KEY`（C4 网页抓取另需 `FIRECRAWL_API_KEY`）。
+
+架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 第 1.1 节与「检索范围」表。
+
+**对话与追踪日志**（刷新 Gradio **不会**删磁盘，只清空网页聊天框）：
+
+| 文件 | 内容 |
+|------|------|
+| `runs/logs/audit/sessions/<id>/chat.jsonl` | 每轮用户问题 + 助手最终回复 |
+| `runs/logs/audit/sessions/<id>/trace.jsonl` | L1 规划、L2 消息与工具调用、L3 研判、`topic4_rag_query` 检索块、各 Tool 入参/出参 |
+| `runs/logs/audit/global_audit.jsonl` | 上述事件的跨会话汇总 |
+
+**日志界面**：`uv run python main.py logs`（工作台 `[6]`）— 含「工具与 RAG」「编排 L1/L2/L3」等 Tab。  
+终端：`main.py logs --status` · `main.py logs --session <会话id>`。
+
+## 常用命令
+
+基础检查：
+
+```powershell
+uv run ruff check .
+uv run pytest
+```
+
+运行 C0/C1 批量实验：
+
+```powershell
+uv run python run_batch_experiments.py
+```
+
+运行 C2 小样本验证：
+
+```powershell
+uv run python run_c2_retrieval_ablation.py --phase 1 --limit 5
+uv run python run_c2_retrieval_ablation.py --phase 2 --limit 5
+uv run python run_c2_retrieval_ablation.py --phase 3 --limit 5 --neighbors 1
+```
+
+运行 C2 完整三阶段实验：
+
+```powershell
+uv run python run_c2_retrieval_ablation.py --phase all --limit 20 --neighbors 1
+```
+
+## 实验输出
+
+C0/C1 批量实验输出：
+
+```text
+runs/logs/c0_naive/run_logs.jsonl
+runs/results/c0_results.csv
+runs/logs/c1_rewrite/run_logs.jsonl
+runs/results/c1_results.csv
+```
+
+C2 三阶段实验输出：
+
+```text
+runs/logs/c2_stage1_c1_hybrid/run_logs.jsonl
+runs/logs/c2_stage2_c1_hybrid_rerank/run_logs.jsonl
+runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
+runs/results/c2_stage1_c1_hybrid_results.csv
+runs/results/c2_stage2_c1_hybrid_rerank_results.csv
+runs/results/c2_stage3_c1_hybrid_rerank_context_results.csv
+runs/results/c2_ablation_summary.json
+runs/results/c2_ablation_report.md
+```
+
+其中 `runs/logs/*` 和 `runs/results/*` 是本地实验输出，默认不提交到 GitHub。
+
+## C0-C4 配置定位
+
+| 配置 | 名称 | 当前定位 |
+| --- | --- | --- |
+| C0 | Naive RAG | 普通 RAG baseline：文档解析、切块、embedding、Top-K 检索、答案生成。 |
+| C1 | Query Rewrite RAG | 在 C0 基础上新增 query rewrite，包括查询诊断、检索式改写、多候选 query 和保守改写判断。 |
+| C2 | Advanced RAG | 在 C1 基础上验证 hybrid retrieval、rerank、context expansion。 |
+| C3 | Agentic Retrieval RAG | 后续新增任务规划、多轮检索和 self-check，不包含外部工具。 |
+| C4 | Tool-Augmented Agentic RAG | 后续新增文件读取、代码执行、计算器、表格分析工具。 |
+
+实验原则：每次只新增一类关键能力，避免变量混在一起导致结果无法解释。
+
+## 下一步工作
+
+优先级从高到低：
+
+1. 唐宁建立 `data/testset/manual_eval_c2.csv`，对 C2 Stage1/Stage2/Stage3 分别评分 Answer Correctness 和 Citation Accuracy。
+2. 先完成 Stage2 的 20 题人工评分，再补 Q005、Q007、Q013、Q018 的三阶段横向案例分析。
+3. 赵启行汇总 C0/C1/C2 总表：文档命中、Gold chunk 命中、答案正确性、引用准确性、延迟、token。
+4. 李金航解释 C2 三阶段收益与成本，尤其是 rerank 提升和 context expansion 的边界。
+5. C2 人工验收后，再决定是否阶段性冻结 C2。
+6. C2 冻结后，再进入 C3：任务规划、多轮检索和 self-check。
+7. C3 稳定后，再进入 C4：文件读取、代码执行、计算器和表格分析工具调用。
+
+建议分工：
+
+- 赵启行：统筹阶段冻结、检查结论表述、推进 C2 验收和最终报告逻辑。
+- 唐宁：复核 C0/C1 人工评分，补充 C2 人工评分，维护失败案例。
+- 李金航：解释 C2 三阶段收益与成本，维护 hybrid retrieval、rerank、context expansion 相关代码。
+
+## 协作注意事项
+
+- GitHub 仓库是唯一同步来源。
+- 每天开始工作前先 `git fetch` / `git pull`，确认自己基于最新远端。
+- 不要随意强推 `main`，不要用无关历史覆盖 `main`。
+- 新增依赖使用 `uv add`，不要各自随便 `pip install`。
+- 不提交 `.env`、`.venv/`、API Key、临时日志、大体积索引和本地 `archive/` 备份。
+- Demo 能跑不等于实验完成，必须有日志、指标、失败案例和成本分析。

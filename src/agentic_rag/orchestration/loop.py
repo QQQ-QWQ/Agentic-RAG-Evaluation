@@ -39,6 +39,7 @@ def _plan_digest(plan: SessionPlan) -> str:
     return (
         f"task_summary={plan.task_summary}\n"
         f"needs_retrieval_tools={plan.needs_retrieval_tools}\n"
+        f"needs_web_tools={plan.needs_web_tools}\n"
         f"kb_mutation_intent={plan.kb_mutation_intent}\n"
         f"suggested_pipelines={plan.suggested_pipelines}\n"
         f"plan_for_layer2={plan.plan_for_layer2}\n"
@@ -69,6 +70,8 @@ def _read_multiline_until_end(
 def run_cli_agent_session(
     *,
     cli_doc: Path | None,
+    kb_doc_ids: list[str] | None = None,
+    cli_documents_hint: str | None = None,
     skip_layer1: bool,
     once_text: str | None,
     temperature: float,
@@ -84,6 +87,8 @@ def run_cli_agent_session(
         _run_single_turn_pipeline(
             user_raw=once_text.strip(),
             cli_doc=cli_doc,
+            kb_doc_ids=kb_doc_ids,
+            cli_documents_hint=cli_documents_hint,
             skip_layer1=skip_layer1,
             temperature=temperature,
             json_debug=json_debug,
@@ -92,16 +97,24 @@ def run_cli_agent_session(
         )
         return
 
+    mode_line = (
+        "  档位：**C4 Tool-Augmented**（检索 + 入库 / MarkItDown / 可选沙箱）\n"
+        if cfg.enable_c4_tools
+        else "  档位：**C3 Agentic Retrieval**（仅检索工具，无外部工具）\n"
+    )
     print(
         "\n"
         "============================================================\n"
-        "  Topic4 多层级编排\n"
+        "  Topic4 多层级编排（C3/C4 客户端）\n"
+        f"{mode_line}"
         "  【第一层】会话规划\n"
-        "  【第二层】Deep Agent + Topic4 RAG 工具\n"
+        "  【第二层】Deep Agent + Topic4 工具\n"
         "  【第三层】研判（结束 / 继续执行 / 重规划 / 问用户）\n"
         "============================================================\n"
     )
-    if cli_doc:
+    if cli_documents_hint:
+        print(f"  命令行已绑定文档（Chroma 子集）：\n{cli_documents_hint}\n")
+    elif cli_doc:
         print(f"  命令行已指定绑定文档：{cli_doc}\n")
     else:
         print(
@@ -134,9 +147,11 @@ def run_cli_agent_session(
         print("再见。")
         return
 
-    agent, _state = _orchestrate_until_stable(
+    agent, _state, doc_resolved = _orchestrate_until_stable(
         user_original=first_line,
         cli_doc=cli_doc,
+        kb_doc_ids=kb_doc_ids,
+        cli_documents_hint=cli_documents_hint,
         skip_layer1=skip_layer1,
         temperature=temperature,
         cfg=cfg,
@@ -170,16 +185,18 @@ def run_cli_agent_session(
         want_full = first_line == "/full" or cfg.orchestrate_follow_ups
         if want_full:
             user_turn = full_body if first_line == "/full" else extra.strip()
-            _orchestrate_until_stable(
+            agent, _state, doc_resolved = _orchestrate_until_stable(
                 user_original=user_turn,
                 cli_doc=cli_doc,
+                kb_doc_ids=kb_doc_ids,
+                cli_documents_hint=cli_documents_hint,
                 skip_layer1=False,
                 temperature=temperature,
                 cfg=cfg,
                 hooks=hk,
                 interactive_replan_prompt=True,
                 reuse_agent=agent,
-                reuse_doc_path=cli_doc,
+                reuse_doc_path=doc_resolved or cli_doc,
             )
             continue
         st = invoke_agent_once(agent, extra)
@@ -192,15 +209,19 @@ def _run_single_turn_pipeline(
     *,
     user_raw: str,
     cli_doc: Path | None,
+    kb_doc_ids: list[str] | None = None,
+    cli_documents_hint: str | None = None,
     skip_layer1: bool,
     temperature: float,
     json_debug: bool,
     cfg: OrchestrationConfig,
     hooks: OrchestrationHooks,
 ) -> None:
-    _agent, state = _orchestrate_until_stable(
+    _agent, state, _doc = _orchestrate_until_stable(
         user_original=user_raw,
         cli_doc=cli_doc,
+        kb_doc_ids=kb_doc_ids,
+        cli_documents_hint=cli_documents_hint,
         skip_layer1=skip_layer1,
         temperature=temperature,
         cfg=cfg,
@@ -222,6 +243,8 @@ def _orchestrate_until_stable(
     *,
     user_original: str,
     cli_doc: Path | None,
+    kb_doc_ids: list[str] | None = None,
+    cli_documents_hint: str | None = None,
     skip_layer1: bool,
     temperature: float,
     cfg: OrchestrationConfig,
@@ -229,7 +252,7 @@ def _orchestrate_until_stable(
     interactive_replan_prompt: bool,
     reuse_agent: Any | None = None,
     reuse_doc_path: Path | None = None,
-) -> tuple[Any | None, dict[str, Any] | None]:
+) -> tuple[Any | None, dict[str, Any] | None, Path | None]:
     hk = hooks
 
     def _fire(name: str, *args: Any) -> None:
@@ -248,7 +271,7 @@ def _orchestrate_until_stable(
         _fire("on_round_start", orch_round)
 
         if skip_layer1 and orch_round == 1:
-            doc_hint = str(cli_doc) if cli_doc is not None else None
+            doc_hint = cli_documents_hint or (str(cli_doc) if cli_doc is not None else None)
             plan = SessionPlan(
                 document_path=doc_hint,
                 task_summary=user_original[:80000],
@@ -283,7 +306,8 @@ def _orchestrate_until_stable(
                     print(f"[编排] 查询改写失败，跳过该前置步骤：{exc}\n")
             enrich_inp = PlanningEnrichInput(
                 user_natural_language=user_original,
-                cli_document_path=str(cli_doc) if cli_doc else None,
+                cli_document_path=cli_documents_hint
+                or (str(cli_doc) if cli_doc else None),
                 project_root=app_cfg.PROJECT_ROOT.resolve(),
                 orchestration_round=orch_round,
             )
@@ -298,12 +322,14 @@ def _orchestrate_until_stable(
             planning_preamble = (
                 "\n\n".join(planning_preamble_parts) if planning_preamble_parts else None
             )
+            doc_bind = cli_documents_hint or (str(cli_doc) if cli_doc else None)
             plan = run_layer1_session_plan(
                 planning_input,
-                cli_document_path=str(cli_doc) if cli_doc else None,
+                cli_document_path=doc_bind,
                 prior_context=accumulated_context if orch_round > 1 else None,
                 temperature=cfg.planner_temperature,
                 planning_preamble=planning_preamble,
+                enable_c4_tools=cfg.enable_c4_tools,
             )
             print()
             print(format_layer1_console(plan))
@@ -316,7 +342,7 @@ def _orchestrate_until_stable(
 
         if agent is None:
             sandbox_ws: Path | None = None
-            if cfg.enable_sandbox_tools:
+            if cfg.enable_c4_tools and cfg.enable_sandbox_tools:
                 if app_cfg.SANDBOX_ENABLED:
                     sandbox_ws = Path(tempfile.mkdtemp(prefix="topic4_agent_sbx_"))
                     print(f"[编排] 沙箱工作目录：{sandbox_ws}\n")
@@ -325,7 +351,12 @@ def _orchestrate_until_stable(
                         "[编排] 已请求沙箱工具，但 SANDBOX_ENABLED 未开启；"
                         "未注册 sandbox_exec_python（可在 .env 设为 true）。\n"
                     )
-            use_kb = doc_resolved is None
+            if kb_doc_ids:
+                use_kb = True
+                agent_doc_path = None
+            else:
+                use_kb = doc_resolved is None
+                agent_doc_path = str(doc_resolved) if doc_resolved else None
             extra_agent_tools: list[Any] = []
             ext_builder = getattr(hk, "extend_agent_tools", None)
             if callable(ext_builder):
@@ -336,12 +367,14 @@ def _orchestrate_until_stable(
                 except Exception as exc:
                     print(f"[编排] extend_agent_tools 失败：{exc}\n")
             agent = build_topic4_deep_agent(
-                doc_path=str(doc_resolved) if doc_resolved else None,
+                doc_path=agent_doc_path,
                 use_knowledge_base=use_kb,
+                kb_doc_ids=kb_doc_ids,
                 temperature=temperature,
                 sandbox_workspace=sandbox_ws,
                 enable_c4_tools=cfg.enable_c4_tools,
                 additional_tools=extra_agent_tools if extra_agent_tools else None,
+                enable_c4_tools=cfg.enable_c4_tools,
             )
 
         exec_addon = accumulated_context if orch_round > 1 else None
@@ -378,7 +411,7 @@ def _orchestrate_until_stable(
             print()
 
             if not cfg.enable_judge:
-                return agent, last_state
+                return agent, last_state, doc_resolved
 
             kb_digest: dict | None = None
             if cfg.enable_kb_grounding_judge:
@@ -425,7 +458,7 @@ def _orchestrate_until_stable(
             print()
 
             if verdict.verdict == "complete":
-                return agent, last_state
+                return agent, last_state, doc_resolved
             if verdict.verdict == "continue_execute":
                 exec_msg = (
                     verdict.hint_for_next_execution
@@ -435,7 +468,7 @@ def _orchestrate_until_stable(
             break
 
         if verdict is None:
-            return agent, last_state
+            return agent, last_state, doc_resolved
 
         if verdict.verdict == "replan":
             hint = (verdict.hint_for_next_planner or "").strip()
@@ -451,7 +484,7 @@ def _orchestrate_until_stable(
                 if extra:
                     accumulated_context += f"\n[用户补充] {extra}\n"
             else:
-                return agent, last_state
+                return agent, last_state, doc_resolved
             continue
 
         if verdict.verdict == "continue_execute":
@@ -462,5 +495,41 @@ def _orchestrate_until_stable(
             continue
 
     print(f"\n（已达最大编排轮次 {cfg.max_orchestration_rounds}。）\n")
-    return agent, last_state
+    return agent, last_state, doc_resolved
+
+
+def orchestrate_user_turn(
+    user_original: str,
+    *,
+    cli_doc: Path | None = None,
+    kb_doc_ids: list[str] | None = None,
+    cli_documents_hint: str | None = None,
+    skip_layer1: bool = False,
+    config: OrchestrationConfig | None = None,
+    reuse_agent: Any | None = None,
+    reuse_doc_path: Path | None = None,
+    temperature: float = 0.35,
+    hooks: OrchestrationHooks | None = None,
+) -> tuple[Any | None, Path | None, dict[str, Any] | None]:
+    """
+    对外 API：执行一轮用户输入的完整编排（供 C3/C4 客户端等调用）。
+
+    返回 ``(agent, doc_resolved, last_state)``；终端输出仍打印到 stdout。
+    """
+    cfg = config or OrchestrationConfig()
+    hk = hooks or OrchestrationHooks()
+    agent, last_state, doc_resolved = _orchestrate_until_stable(
+        user_original=user_original.strip(),
+        cli_doc=cli_doc,
+        kb_doc_ids=kb_doc_ids,
+        cli_documents_hint=cli_documents_hint,
+        skip_layer1=skip_layer1,
+        temperature=temperature,
+        cfg=cfg,
+        hooks=hk,
+        interactive_replan_prompt=False,
+        reuse_agent=reuse_agent,
+        reuse_doc_path=reuse_doc_path,
+    )
+    return agent, doc_resolved, last_state
 

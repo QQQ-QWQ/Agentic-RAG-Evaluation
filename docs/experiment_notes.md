@@ -884,7 +884,7 @@ tests/test_markitdown_tool.py
 ---
 
 ## 2026-05-17 C3/C4 统一客户端、Agent Runtime、多文档入库与传入检查
-
+记录人：李金航
 阶段：课题四 —— 产品化客户端与 Runtime 骨架；多文档 Chroma 子集检索；传入文件治理与审计日志。
 
 ### 背景与目标
@@ -948,6 +948,7 @@ uv run python main.py agent --c3 --planning-rewrite
 
 - `docs/ARCHITECTURE.md` §2.10–2.14、§5 修订记录
 - `docs/agent_runtime_architecture.md` 完成度表与日志双线
+- 后续工具对称化见 **2026-05-18** 条目
 
 ### 本次新增/涉及文件（路径清单）
 
@@ -973,9 +974,129 @@ tests/test_runtime_*.py
 
 ### 仍建议后续改进
 
-- Gradio 暴露「规划前查询改写」勾选项；对话区 **File 上传** 或 **URL 入库** 工具。
+- Gradio 暴露「规划前查询改写」勾选项；对话区 **File 上传**（仍无）；**URL** 见 2026-05-18（C4 Agent 动态 Firecrawl，非 Gradio 自动抓取）。
 - 编排 hooks 发射 `tool_start`/`tool_end` 结构化事件（非仅审计 JSONL）。
 - 清理 `documents.csv` 历史重复 doc_id（可选人工删行 + 一次 `force_rebuild`）。
+
+### Git 痕迹
+
+- 提交：`547f8ae` — `feat(client): C3/C4 统一客户端、多文档入库去重与 Runtime 编排骨架`（已 push `main`）。
+
+---
+
+## 2026-05-18 C4 外部工具对称化：Firecrawl 网页 + 本地文件动态工具族
+记录人：李金航
+阶段：课题四 —— 第二层工具与第一层填槽对齐「网页 / 本地盘」双通道；统一工具 JSON 外壳；C3 严格不暴露外部工具。
+
+### 背景与目标
+
+- 用户要求：**读取与操作本地文件**应像 **Firecrawl 抓网页**一样，由第二层 Agent **按需动态调用**，而不是拆成 `topic4_read_local_file` + `topic4_file_to_markdown` + `topic4_kb_ingest` 多个易混淆入口。
+- **C3** 仍仅 `topic4_list_rag_pipelines` + `topic4_rag_query`；即使配置了 `FIRECRAWL_API_KEY` 也不注册 Firecrawl / 读盘工具。
+- **C4** 在检索工具之外，提供对称的两组能力：
+  - **网页**：`topic4_firecrawl_scrape` / `topic4_firecrawl_search` / `topic4_firecrawl_scrape_to_kb`（需 Key）
+  - **本地**：`topic4_file_read` / `topic4_file_ingest`（读盘 + 入库；MarkItDown 作为工程根内读取后端，不单独暴露工具名）
+
+### 已完成（实现摘要）
+
+| 模块 | 内容 |
+|------|------|
+| `tools/firecrawl_tool.py` | `scrape_url` / `search_web`；URL 抽取；`scrape_to_markdown_file` → `data/raw/web_snapshots/`；`firecrawl_configured()`。 |
+| `tools/file_tool.py` | `read_file_content`（根内 MarkItDown、根外 `parse_path`）；`ingest_file_to_kb`（盘外 `copy_file=True`）；统一 `format_*_response`。 |
+| `tools/response_format.py` | `schema_version: topic4.tool.v1` 外壳，Firecrawl / 文件工具共用。 |
+| `deep_planning/tools_factory.py` | `_build_firecrawl_tools`、`_build_c4_file_tools`；移除 `topic4_kb_ingest`、`topic4_file_to_markdown`、`topic4_read_local_file`。 |
+| `deep_planning/session_planner.py` | L1 字段 `needs_web_tools`、`web_urls`、`local_paths`；`format_c4_parsed_input_block` 注入 L2（链接 → scrape，路径 → file_read）。 |
+| `deep_planning/agent_runner.py` | L2 系统提示改为 `topic4_file_read` / `topic4_file_ingest` 与 Firecrawl 分工说明。 |
+| `runtime/tools/governance.py` | C4 工具白名单同步为新名称。 |
+| `orchestration/planning_extensions.py` | 入库提示改为 `topic4_file_ingest`（盘外可复制入库）。 |
+| `config.py` / `.env.example` | `FIRECRAWL_API_KEY`、`FIRECRAWL_MAX_OUTPUT_CHARS`、`FIRECRAWL_SEARCH_LIMIT`。 |
+| `pyproject.toml` | `agent` 依赖组增加 `firecrawl-py`。 |
+| `cli/c34_client.py` | 状态栏提示：无 Key 时仍可用 `topic4_file_*`。 |
+| 删除 | `tools/local_file_tool.py`（逻辑并入 `file_tool.py`）。 |
+
+### C3 / C4 工具对照（客户端 B 线，2026-05-18 起）
+
+| 能力 | C3 | C4 |
+|------|----|----|
+| Chroma 检索 | `topic4_rag_query` | 同左 |
+| 读本地文件 | ❌ | `topic4_file_read`（动态） |
+| 本地文件入库 | ❌ | `topic4_file_ingest`（含盘外复制） |
+| 抓网页 / 搜索 | ❌ | Firecrawl 三件套（需 Key） |
+| 沙箱 Python | ❌ | 可选 `sandbox_exec_python` |
+
+### 典型命令与配置
+
+```powershell
+uv sync --group agent
+# .env 中配置 FIRECRAWL_API_KEY 后 C4 才出现 firecrawl_* 工具
+uv run python main.py client --c4
+uv run python main.py agent --c4
+
+# 单测（mock，不调外网）
+uv run pytest tests/test_firecrawl_tool.py tests/test_file_tool.py -q
+```
+
+### 分工备忘（避免 Agent 误用）
+
+- **Firecrawl 不能读本地磁盘**；**MarkItDown 不抓 http(s)**。
+- 用户消息中的 **URL** → 优先 `topic4_firecrawl_scrape`；**本地路径** → `topic4_file_read`；要进 Chroma → `topic4_file_ingest` 或 `topic4_firecrawl_scrape_to_kb`。
+- 「开始会话」路径框批量入库逻辑不变；对话内临时路径由 Agent 调 `topic4_file_ingest`。
+
+### 文档同步
+
+- `docs/ARCHITECTURE.md` §2.4、§2.9、§2.10、§5（2026-05-18）
+- `docs/agent_runtime_architecture.md` 完成度表（2026-05-18）
+- `docs/experiment_stage_and_code_ownership.md` §4.5
+- `.cursor/skills/topic4-orchestration-layers/SKILL.md` 工具表
+
+### 本次新增/涉及文件（路径清单）
+
+```text
+src/agentic_rag/tools/firecrawl_tool.py
+src/agentic_rag/tools/file_tool.py
+src/agentic_rag/tools/response_format.py
+src/agentic_rag/deep_planning/tools_factory.py
+src/agentic_rag/deep_planning/session_planner.py
+src/agentic_rag/deep_planning/agent_runner.py
+src/agentic_rag/runtime/tools/governance.py
+tests/test_firecrawl_tool.py
+tests/test_file_tool.py
+```
+
+### 仍建议后续改进
+
+- Gradio **对话内附件上传**、**规划前改写** UI 开关。
+- `topic4_kb_ingest` 旧名在实验笔记历史段落中仍会出现；代码侧已统一为 `topic4_file_ingest`。
+- 编排层 `tool_start`/`tool_end` 事件与审计 JSONL 对齐。
+
+### Git 痕迹
+
+- **截至文档整理时**：本节功能在本地工作区，**尚未单独 commit**；建议在合并后使用类似  
+  `feat(tools): C4 Firecrawl 与 topic4_file_read/ingest 对称工具族` 提交，并与 `547f8ae`（05-17）区分。
+
+---
+
+## 2026-05-19 系统知识库 sync 与会话临时索引
+
+### 目标
+
+- **`data/raw` 系统子目录**（排除 `session_upload` / `user_docs`）由 `main.py kb sync` 自动写入 `documents.csv` 并重建 Chroma。
+- **`main.py kb reset`**：清空 Chroma + `chunks.jsonl` 后全量 sync（干净重启）。
+- **客户端附加路径**：仅本会话**临时切块索引**，不写全库；审计事件 `session_scope_ready` / `kb_reset_*`。
+
+### 命令
+
+```powershell
+uv run python main.py kb reset
+uv run python main.py kb sync
+uv run python main.py kb clear-chroma
+uv run python main.py client --console --c4 --sync-kb
+```
+
+说明见 **`data/raw/README.md`**。
+
+### 涉及模块
+
+`experiment/kb_paths.py`、`kb_sync.py`、`kb_chroma_admin.py`、`documents/session_index.py`、`experiment/session_rag.py`；`multi_doc.py`、`c34_client.py`、`tools_factory.py`、`cli/app.py`。
 
 ---
 
@@ -990,7 +1111,7 @@ tests/test_runtime_*.py
 5. 基于2026-05-06 的 C2 三阶段消融结果，整理阶段 1→2→3 的成本与检索命中对比，并补齐 **Q013** 等失败案例分析。
 6. 后续 C2 扩展实验也必须使用同一知识库、同一测试集，不能换题后再比较。
 7. Topic4 Agent：`--once-file` 大批量场景下若要进一步优化体验，评估接入 **流式输出 / 进度回调**；按需收紧第三层研判 Prompt 或结构化输出字段（减少冗长 `need_user_input` 式总结触发重复执行的语义噪声）。
-8. **C3/C4 客户端**（2026-05-17）：Gradio 对话内上传/URL 抓取、规划前改写 UI 开关；见上节「仍建议后续改进」。
+8. **C3/C4 客户端**：2026-05-18 已接 C4 动态 Firecrawl / `topic4_file_*`；仍缺 Gradio 附件上传、规划前改写 UI；见 `experiment_notes` 2026-05-17 / 2026-05-18。
 
 ---
 

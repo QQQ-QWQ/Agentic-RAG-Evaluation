@@ -188,6 +188,49 @@ def cmd_agent(args: argparse.Namespace) -> None:
     run_deep_agent(args)
 
 
+def cmd_kb_sync(args: argparse.Namespace) -> None:
+    from agentic_rag.experiment.kb_sync import sync_system_kb
+    from agentic_rag.telemetry.audit_log import audit_log
+
+    audit_log(
+        "kb_sync_start",
+        payload={"clear_chroma_first": bool(getattr(args, "clear_chroma", False))},
+    )
+    r = sync_system_kb(
+        config.PROJECT_ROOT,
+        clear_chroma_first=bool(getattr(args, "clear_chroma", False)),
+        remove_chunks_jsonl=bool(getattr(args, "clear_chroma", False)),
+    )
+    audit_log("kb_sync_complete", payload=r)
+    print(json.dumps(r, ensure_ascii=False, indent=2))
+    if not r.get("ok"):
+        sys.exit(1)
+
+
+def cmd_kb_reset(args: argparse.Namespace) -> None:
+    from agentic_rag.experiment.kb_sync import reset_system_kb
+    from agentic_rag.telemetry.audit_log import audit_log
+
+    audit_log("kb_reset_start", payload={})
+    r = reset_system_kb(config.PROJECT_ROOT)
+    audit_log("kb_reset_complete", payload=r)
+    print(json.dumps(r, ensure_ascii=False, indent=2))
+    if not r.get("ok"):
+        sys.exit(1)
+
+
+def cmd_kb_clear_chroma(args: argparse.Namespace) -> None:
+    from agentic_rag.experiment.kb_chroma_admin import clear_chroma_and_index_caches
+    from agentic_rag.telemetry.audit_log import audit_log
+
+    r = clear_chroma_and_index_caches(
+        config.PROJECT_ROOT,
+        remove_chunks_jsonl=bool(getattr(args, "chunks", False)),
+    )
+    audit_log("kb_chroma_cleared", payload=r)
+    print(json.dumps(r, ensure_ascii=False, indent=2))
+
+
 def cmd_kb_ingest(args: argparse.Namespace) -> None:
     from agentic_rag.experiment.kb_ingest import ingest_local_file_to_kb
 
@@ -259,6 +302,21 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[build_agent_parser(add_help=False)],
         help="Deep Agents 动态规划 + Topic4 RAG 工具（需 uv sync --group agent）",
     ).set_defaults(func=cmd_agent)
+
+    from agentic_rag.cli.c34_client import build_c34_client_parser, cmd_c34_client
+    from agentic_rag.cli.logs_viewer import build_logs_parser, cmd_logs
+
+    sub.add_parser(
+        "client",
+        parents=[build_c34_client_parser(add_help=False)],
+        help="C3/C4 统一客户端：选档位后多层级编排（默认 Gradio；--console 为终端）",
+    ).set_defaults(func=cmd_c34_client)
+
+    sub.add_parser(
+        "logs",
+        parents=[build_logs_parser(add_help=False)],
+        help="日志查看：Gradio 界面；--session / --status 为终端",
+    ).set_defaults(func=cmd_logs)
 
     exp = sub.add_parser("experiment", help="批量 / 消融（与既有脚本等价）")
     exp_sub = exp.add_subparsers(dest="exp_cmd", metavar="SUB", required=True)
@@ -369,6 +427,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="仅更新 CSV（不重建切块与 Chroma；下一次检索或手动重建才会量化）",
     )
     p_kb_ingest.set_defaults(func=cmd_kb_ingest)
+
+    p_kb_sync = kb_sub.add_parser(
+        "sync",
+        help="扫描 data/raw 系统目录 → 重写 documents.csv → 重建 Chroma",
+    )
+    p_kb_sync.add_argument(
+        "--clear-chroma",
+        action="store_true",
+        help="同步前先清空 Chroma 目录（等同部分 reset）",
+    )
+    p_kb_sync.set_defaults(func=cmd_kb_sync)
+
+    kb_sub.add_parser(
+        "reset",
+        help="清空 Chroma + chunks.jsonl，再按 data/raw 全量 sync（干净重启）",
+    ).set_defaults(func=cmd_kb_reset)
+
+    p_kb_clear = kb_sub.add_parser(
+        "clear-chroma",
+        help="仅删除 Chroma 持久化目录与内存缓存（不改 documents.csv）",
+    )
+    p_kb_clear.add_argument(
+        "--chunks",
+        action="store_true",
+        help="同时删除 data/processed/chunks.jsonl",
+    )
+    p_kb_clear.set_defaults(func=cmd_kb_clear_chroma)
 
     return parser
 

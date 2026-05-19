@@ -132,6 +132,14 @@ def _now_run_id(prefix: str) -> str:
     return f"{prefix}-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
 
 
+def merge_evidence_hits(
+    hit_groups: list[list[EvidenceChunk]],
+    top_k: int,
+) -> list[EvidenceChunk]:
+    """多路检索结果按 chunk_id 取最高分后截断为 top_k。"""
+    return _merge_hits(hit_groups, top_k=top_k)
+
+
 def _merge_hits(hit_groups: list[list[EvidenceChunk]], top_k: int) -> list[EvidenceChunk]:
     best: dict[str, EvidenceChunk] = {}
     for hits in hit_groups:
@@ -167,6 +175,7 @@ def retrieve_with_index(
     rerank: bool = False,
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
+    allowed_doc_ids: frozenset[str] | None = None,
 ) -> tuple[list[EvidenceChunk], dict[str, int], dict[str, Any]]:
     """
     检索：默认 **混合检索**（稠密余弦 + BM25），两路分数分别 min-max 归一化后按权重加权求和。
@@ -220,6 +229,8 @@ def retrieve_with_index(
                 else {}
             )
             hit_doc_id = str(meta.get("doc_id") or doc_id)
+            if allowed_doc_ids is not None and hit_doc_id not in allowed_doc_ids:
+                continue
             hit_source = str(meta.get("source") or source)
             hit_chunk_id = str(
                 meta.get("chunk_id") or f"{hit_doc_id}::chunk_{i:04d}"
@@ -252,13 +263,67 @@ def retrieve_with_index(
         else:
             pool = scored[:top_k]
         hit_groups.append(pool)
-    merged = _merge_hits(hit_groups, top_k=top_k)
+    merged = merge_evidence_hits(hit_groups, top_k=top_k)
     ark_bundle: dict[str, Any] = {
         "prompt_tokens": int(ark_usage_acc.get("prompt_tokens") or 0),
         "completion_tokens": int(ark_usage_acc.get("completion_tokens") or 0),
         "total_tokens": int(ark_usage_acc.get("total_tokens") or 0),
     }
     return merged, rerank_usage_total, ark_bundle
+
+
+def retrieve_merged_from_indexes(
+    indexes: list[SimpleVectorIndex],
+    queries: list[str],
+    *,
+    top_k: int = 5,
+    per_index_top_k: int | None = None,
+    hybrid: bool = True,
+    dense_weight: float = 0.6,
+    bm25_weight: float = 0.4,
+    bm25_tokenize: Callable[[str], list[str]] | None = None,
+    rerank: bool = False,
+    rerank_backend: str = "llm",
+    rerank_pool_size: int = 20,
+    allowed_doc_ids: frozenset[str] | None = None,
+) -> tuple[list[EvidenceChunk], dict[str, int], dict[str, Any]]:
+    """
+    对多个索引分别检索，再按 chunk_id 融合为统一 top_k（用于全库 + 会话临时索引）。
+    """
+    if not indexes:
+        return [], {}, {}
+    cap = per_index_top_k if per_index_top_k is not None else top_k
+    hit_groups: list[list[EvidenceChunk]] = []
+    rerank_usage_total: dict[str, int] = {}
+    ark_usage_acc: dict[str, int] = {}
+    for index in indexes:
+        hits, rerank_usage, ark_bundle = retrieve_with_index(
+            index,
+            queries,
+            top_k=cap,
+            hybrid=hybrid,
+            dense_weight=dense_weight,
+            bm25_weight=bm25_weight,
+            bm25_tokenize=bm25_tokenize,
+            rerank=rerank,
+            rerank_backend=rerank_backend,
+            rerank_pool_size=rerank_pool_size,
+            allowed_doc_ids=allowed_doc_ids,
+        )
+        hit_groups.append(hits)
+        for key, val in rerank_usage.items():
+            rerank_usage_total[key] = rerank_usage_total.get(key, 0) + val
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            ark_usage_acc[key] = ark_usage_acc.get(key, 0) + int(
+                ark_bundle.get(key) or 0
+            )
+    merged = merge_evidence_hits(hit_groups, top_k=top_k)
+    ark_out: dict[str, Any] = {
+        "prompt_tokens": int(ark_usage_acc.get("prompt_tokens") or 0),
+        "completion_tokens": int(ark_usage_acc.get("completion_tokens") or 0),
+        "total_tokens": int(ark_usage_acc.get("total_tokens") or 0),
+    }
+    return merged, rerank_usage_total, ark_out
 
 
 def _usage_to_dict(usage) -> dict[str, int]:
@@ -336,6 +401,7 @@ def run_c0_with_index(
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
     context_neighbor_chunks: int = 0,
+    allowed_doc_ids: frozenset[str] | None = None,
 ) -> dict:
     started = time.perf_counter()
     error = ""
@@ -356,6 +422,7 @@ def run_c0_with_index(
             rerank=use_rerank,
             rerank_backend=rerank_backend,
             rerank_pool_size=rerank_pool_size,
+            allowed_doc_ids=allowed_doc_ids,
         )
         hits = expand_hits_with_neighbors(
             hits,
@@ -416,6 +483,7 @@ def run_c1_with_index(
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
     context_neighbor_chunks: int = 0,
+    allowed_doc_ids: frozenset[str] | None = None,
 ) -> dict:
     started = time.perf_counter()
     error = ""
@@ -444,6 +512,7 @@ def run_c1_with_index(
             rerank=use_rerank,
             rerank_backend=rerank_backend,
             rerank_pool_size=rerank_pool_size,
+            allowed_doc_ids=allowed_doc_ids,
         )
         hits = expand_hits_with_neighbors(
             hits,

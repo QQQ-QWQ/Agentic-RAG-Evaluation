@@ -22,16 +22,17 @@
 
 ### 1. `data/raw/`
 
-放原始资料，不随便改。
+放原始资料，不随便改。详见 **`data/raw/README.md`**。
 
-可以放：
+**系统知识库**（`main.py kb sync` / `kb reset` 会扫描并写入 Chroma）：
 
-- 学习资料。
-- 实验室资料。
-- 技术文档。
-- CSV 表格。
-- 代码片段。
-- Benchmark 参考样例原始文件。
+- `tech_docs/`、`learning_docs/`、`lab_docs/`、`tables_csv/`、`code_snippets/`
+
+**不会进入系统全库**（会话附加或历史目录）：
+
+- `session_upload/` — 客户端绑定后仅**临时索引**
+- `user_docs/` — 不再作为 sync 来源
+- `web_snapshots/` — Firecrawl 快照
 
 规则：
 

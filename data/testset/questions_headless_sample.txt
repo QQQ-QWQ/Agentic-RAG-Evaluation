@@ -1,0 +1,2 @@
+# 无头 runtime  smoke 样例（每行一题，# 开头为注释）
+LangChain 在 RAG 里通常承担什么角色？

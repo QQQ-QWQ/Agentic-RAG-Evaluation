@@ -20,17 +20,27 @@ class ToolSpec:
 
 
 # C3 仅检索；C4 增加外部工具
-_C3_NAMES = frozenset({"topic4_list_rag_pipelines", "topic4_rag_query"})
+_C3_NAMES = frozenset(
+    {
+        "topic4_list_rag_pipelines",
+        "topic4_rag_query",
+    }
+)
 _C4_EXTRA = frozenset(
     {
-        "topic4_kb_ingest",
-        "topic4_file_to_markdown",
+        "topic4_file_read",
+        "topic4_file_ingest",
+        "topic4_firecrawl_scrape",
+        "topic4_firecrawl_search",
+        "topic4_firecrawl_scrape_to_kb",
         "sandbox_exec_python",
     }
 )
 
 
 def get_all_base_tool_specs(*, enable_c4: bool) -> list[ToolSpec]:
+    from agentic_rag.tools.firecrawl_tool import firecrawl_configured
+
     specs = [
         ToolSpec("topic4_list_rag_pipelines", "列出 RAG 管线"),
         ToolSpec("topic4_rag_query", "知识库/单文档 RAG 问答"),
@@ -38,11 +48,19 @@ def get_all_base_tool_specs(*, enable_c4: bool) -> list[ToolSpec]:
     if enable_c4:
         specs.extend(
             [
-                ToolSpec("topic4_kb_ingest", "工程内文件入库并重建索引"),
-                ToolSpec("topic4_file_to_markdown", "MarkItDown 转 Markdown"),
+                ToolSpec("topic4_file_read", "读取本地文件（MarkItDown / parse_path）"),
+                ToolSpec("topic4_file_ingest", "本地文件入库并重建 Chroma 索引"),
                 ToolSpec("sandbox_exec_python", "隔离目录执行 Python"),
             ]
         )
+        if firecrawl_configured():
+            specs.extend(
+                [
+                    ToolSpec("topic4_firecrawl_scrape", "Firecrawl 抓取 URL→Markdown"),
+                    ToolSpec("topic4_firecrawl_search", "Firecrawl 网页搜索"),
+                    ToolSpec("topic4_firecrawl_scrape_to_kb", "抓取网页并入库 Chroma"),
+                ]
+            )
     return specs
 
 

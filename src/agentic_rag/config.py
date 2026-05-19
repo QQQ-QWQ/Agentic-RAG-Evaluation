@@ -48,10 +48,17 @@ SANDBOX_ENABLED = (_env("SANDBOX_ENABLED", "false") or "false").lower() in (
 SANDBOX_TIMEOUT_SEC = float(_env("SANDBOX_TIMEOUT_SEC", "60") or "60")
 SANDBOX_MAX_CODE_CHARS = int(_env("SANDBOX_MAX_CODE_CHARS", "50000") or "50000")
 
-# Agent 工具 topic4_file_to_markdown：单文件最大字节（防止一次读爆内存）
+# Agent 工具 topic4_file_read（MarkItDown 分支）：单文件最大字节（防止一次读爆内存）
 MARKITDOWN_MAX_FILE_BYTES = int(
     _env("MARKITDOWN_MAX_FILE_BYTES", str(25 * 1024 * 1024)) or str(25 * 1024 * 1024)
 )
+
+# Firecrawl（https://docs.firecrawl.dev/zh/introduction）网页抓取 / 搜索
+FIRECRAWL_API_KEY = _env("FIRECRAWL_API_KEY")
+FIRECRAWL_MAX_OUTPUT_CHARS = int(
+    _env("FIRECRAWL_MAX_OUTPUT_CHARS", "80000") or "80000"
+)
+FIRECRAWL_SEARCH_LIMIT = int(_env("FIRECRAWL_SEARCH_LIMIT", "5") or "5")
 
 # 更强隔离的远端沙箱（与本仓库 sandbox/local_subprocess.py 无自动集成，仅作架构备选）：
 # CubeSandbox（KVM MicroVM、兼容 E2B API）需独立 Linux/KVM 部署；资源随沙箱规格与并发变化，

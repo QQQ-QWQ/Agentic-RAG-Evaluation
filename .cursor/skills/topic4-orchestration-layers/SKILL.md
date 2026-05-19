@@ -25,8 +25,8 @@ description: >-
 |------|------|----------------|
 | `topic4_list_rag_pipelines` | 列出 RAG 管线 id | 只读说明 |
 | `topic4_rag_query` | 全库或绑定单文档 RAG | 走既有 Chroma / runner |
-| `topic4_kb_ingest` | 登记 `documents.csv` 并重建索引 | 路径须在 **工程根**内 |
-| `topic4_file_to_markdown` | [MarkItDown](https://github.com/microsoft/markitdown) 将 PDF/Office/HTML 等转 Markdown | 路径须在 **工程根**内；`MARKITDOWN_MAX_FILE_BYTES` 限体积；`enable_plugins=False` |
+| `topic4_file_read` | 读本地文件（根内 MarkItDown，根外 parse_path） | C4 动态调用；与 Firecrawl 对称 |
+| `topic4_file_ingest` | 登记 `documents.csv` 并重建索引 | 盘外路径会复制到 `data/raw/user_docs/` |
 | `sandbox_exec_python`（可选） | 在**会话临时目录**内 `python` 执行片段 | 需 `SANDBOX_ENABLED=true` + 编排未 `--no-sandbox`；**非** VM 级隔离 |
 
 **扩展（任意时机追加工具）**：在创建第二层 Agent 时（每轮 `agent is None` 重建时），`OrchestrationHooks.extend_agent_tools` 可返回额外 LangChain 工具，与上表合并。适合接入团队自研工具、远端 E2B/Cube 封装等（需自行实现 Tool 与鉴权）。
@@ -46,7 +46,7 @@ description: >-
 ## 修改提示词时的检查清单
 
 - [ ] L1 的 `LAYER1_SYSTEM_PROMPT` 是否仍强调「仅 JSON、无工具」，且列出 L2 工具供 `plan_for_layer2` 编排？
-- [ ] L2 的 `DEFAULT_AGENT_SYSTEM_PROMPT` 是否仍强调「一切可执行动作走工具」，且包含 `topic4_file_to_markdown`？
+- [ ] L2 的 `DEFAULT_AGENT_SYSTEM_PROMPT` 是否仍强调「一切可执行动作走工具」，且包含 `topic4_file_read` / `topic4_file_ingest`？
 - [ ] L3 的 `LAYER3_SYSTEM_PROMPT` 是否仍强调「只研判、不抠路径」？
 
 ## 相关路径
