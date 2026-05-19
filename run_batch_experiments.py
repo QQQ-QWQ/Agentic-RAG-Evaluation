@@ -141,6 +141,18 @@ def result_to_row(
             [hit.get("chunk_id", "") for hit in hits],
             ensure_ascii=False,
         ),
+        "retrieved_chunk_ids": json.dumps(
+            result.get("retrieved_chunk_ids", []),
+            ensure_ascii=False,
+        ),
+        "expanded_chunk_ids": json.dumps(
+            result.get("expanded_chunk_ids", []),
+            ensure_ascii=False,
+        ),
+        "final_citation_chunk_ids": json.dumps(
+            result.get("final_citation_chunk_ids", []),
+            ensure_ascii=False,
+        ),
         "top_doc_ids": json.dumps(
             [hit.get("doc_id", "") for hit in hits],
             ensure_ascii=False,
@@ -183,6 +195,9 @@ def write_results_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "top_contains_expected_doc",
         "top_rank_expected_doc",
         "top_chunk_ids",
+        "retrieved_chunk_ids",
+        "expanded_chunk_ids",
+        "final_citation_chunk_ids",
         "top_doc_ids",
         "citations",
         "answer",

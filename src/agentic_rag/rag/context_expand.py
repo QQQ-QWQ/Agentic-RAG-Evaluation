@@ -256,12 +256,8 @@ def expand_hits_selectively(
         merged = "\n\n---\n\n".join(index.chunks[pos] for pos in positions)
         reason = f"selective_context_expansion:{trigger_reason}"
         if used_chars + len(merged) > max_context_chars:
-            remaining = max_context_chars - used_chars
-            if remaining <= len(hit.text):
-                out.append(_copy_hit_with_expansion(hit, applied=False, reason="context_budget_exceeded"))
-                continue
-            merged = merged[:remaining]
-            reason = f"{reason}:truncated_to_budget"
+            out.append(_copy_hit_with_expansion(hit, applied=False, reason="context_budget_exceeded"))
+            continue
 
         used_chars += len(merged)
         expanded_count += 1

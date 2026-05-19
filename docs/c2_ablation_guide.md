@@ -52,6 +52,12 @@ uv run python run_c2_retrieval_ablation.py --no-rewrite --rerank-backend none
 
 CSV 在 `run_batch_experiments` 字段基础上增加：`experiment_variant`、`hybrid`、`use_rerank`、`context_neighbor_chunks`、`retrieval_query_count`、`gold_chunk_hit`、`gold_chunk_rank`、`rerank_total_tokens`。
 
+为便于区分 Stage3 上下文扩展与最终引用，结果表和日志中保留三类 chunk id：
+
+- `retrieved_chunk_ids`：扩展前的原始检索命中 chunk。
+- `expanded_chunk_ids`：被拼入上下文的邻接扩展 chunk。
+- `final_citation_chunk_ids`：最终答案引用的 chunk。
+
 ## 指标说明（与 `docs/experiment_notes.md` 对齐）
 
 - **预期文档命中**：`top_contains_expected_doc`，来自 `references.csv` 的 `evidence_doc_id`（可多文档逗号分隔）。

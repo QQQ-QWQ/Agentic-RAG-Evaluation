@@ -59,6 +59,27 @@ def load_judge_prompt_template(path: str | Path | None = None) -> str:
     return p.read_text(encoding="utf-8")
 
 
+def load_rag_judge_prompt_template(path: str | Path | None = None) -> str:
+    """Load the multi-dimensional RAG judge prompt template."""
+    repo_root = _repo_root()
+    p = Path(path) if path else repo_root / "prompts" / "rag_multidim_judge_prompt.md"
+    if not p.is_file():
+        raise FileNotFoundError(f"Cannot find RAG judge prompt file: {p}")
+    return p.read_text(encoding="utf-8")
+
+
+def _dimension_payload(payload: dict[str, Any], key: str) -> tuple[float, str, str]:
+    value = payload.get(key, {})
+    if isinstance(value, dict):
+        raw_score = value.get("score")
+        raw_reason = value.get("reason", "")
+    else:
+        raw_score = value
+        raw_reason = ""
+    score = _normalize_score(raw_score)
+    return score, _label_from_score(score), str(raw_reason or "").strip()
+
+
 def judge_answer_with_rule(
     *,
     question: str,
@@ -115,3 +136,84 @@ def judge_answer_with_rule(
         "judge_reason": reason,
         "judge_total_tokens": usage.get("total_tokens", 0),
     }
+
+
+def judge_rag_response_with_rubric(
+    *,
+    question: str,
+    reference_answer: str,
+    generated_answer: str,
+    judge_rule: str,
+    retrieved_evidence: str = "",
+    generated_citations: str = "",
+    gold_doc_id: str = "",
+    gold_chunk_id: str = "",
+    prompt_file: str | Path | None = None,
+    model: str | None = None,
+) -> dict[str, Any]:
+    """
+    Score one RAG response with multiple dimensions.
+
+    This is an auxiliary LLM-as-judge path. It does not replace human labels.
+    """
+    template = load_rag_judge_prompt_template(prompt_file)
+    user_content = template.format(
+        question=question.strip(),
+        reference_answer=(reference_answer or "").strip(),
+        generated_answer=(generated_answer or "").strip(),
+        judge_rule=(judge_rule or "").strip(),
+        retrieved_evidence=(retrieved_evidence or "").strip(),
+        generated_citations=(generated_citations or "").strip(),
+        gold_doc_id=(gold_doc_id or "").strip(),
+        gold_chunk_id=(gold_chunk_id or "").strip(),
+    )
+    client = create_deepseek_client()
+    resp = client.chat.completions.create(
+        model=model or config.DEEPSEEK_CHAT_MODEL or "deepseek-chat",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Return one valid JSON object only. Do not use markdown. "
+                    "Strictly follow the scoring rubric."
+                ),
+            },
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.0,
+    )
+    raw = (resp.choices[0].message.content or "").strip()
+    usage: dict[str, int] = {}
+    u = getattr(resp, "usage", None)
+    if u is not None:
+        for attr in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            v = getattr(u, attr, None)
+            if v is not None:
+                usage[attr] = int(v)
+    require_deepseek_chat_usage(usage, where="RAG multi-dimensional judge")
+
+    payload = extract_json_object(raw)
+    dimensions = [
+        "answer_correctness",
+        "answer_completeness",
+        "citation_accuracy",
+        "faithfulness",
+    ]
+    out: dict[str, Any] = {}
+    scores: list[float] = []
+    for key in dimensions:
+        score, label, reason = _dimension_payload(payload, key)
+        out[f"{key}_score"] = score
+        out[f"{key}_label"] = label
+        out[f"{key}_reason"] = reason
+        scores.append(score)
+
+    out["llm_judge_weighted_score"] = sum(scores) / len(scores) if scores else 0.0
+    out["llm_judge_failure_type"] = str(
+        payload.get("failure_type") or "none"
+    ).strip()
+    out["llm_judge_overall_reason"] = str(
+        payload.get("overall_reason") or ""
+    ).strip()
+    out["llm_judge_total_tokens"] = usage.get("total_tokens", 0)
+    return out

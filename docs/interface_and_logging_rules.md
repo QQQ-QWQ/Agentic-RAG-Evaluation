@@ -162,3 +162,18 @@ Rewrite Validity 人工评分建议：
 - **自动化分数不等于最终正确性**：最终结论需结合人工标注后再定；与人评对比可用于评估后续 AI 自规划 / 自检环节可信度。
 
 仓库根脚本：``run_score_answer_accuracy.py``、``run_c2_ablation_answer_accuracy.py``。
+
+新版多维 LLM-as-judge 可选输出：
+
+```text
+answer_correctness_score
+answer_completeness_score
+citation_accuracy_score
+faithfulness_score
+llm_judge_weighted_score
+llm_judge_failure_type
+llm_judge_overall_reason
+llm_judge_total_tokens
+```
+
+对应脚本：``run_score_rag_multidim.py``。该脚本用于自动化辅助评测，不替代人工评分。若写入实验记录，必须说明 Prompt、模型、测试集和结果文件版本。

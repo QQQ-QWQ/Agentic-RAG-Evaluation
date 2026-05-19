@@ -1741,3 +1741,106 @@ SANDBOX_ENABLED=true    # Python 代码题仍建议开启
 - 写入 `data/raw/` 后需 **`main.py kb sync`** 或 **`topic4_file_ingest`** 才进 Chroma。  
 - C3 模式仍无写盘/shell 工具。  
 - 关闭写盘：`.env` 设 `FILE_WRITE_ENABLED=false`（同时不注册 write/edit）。
+
+## 2026-05-19 C2 Stage3 两轮优化复盘与最终保留版本
+
+记录人：赵启行
+
+阶段：C2 Advanced RAG / Stage3 context expansion 继续优化。
+
+### 一、优化背景
+
+5 月 18 日已将 Stage3 从“固定邻接 chunk 扩展”改为“选择性上下文扩展”。该版本相比最早的固定扩展，已经解决了无条件拼接上下文导致大量 `unsupported_refusal` 的问题，但仍存在两个需要继续补强的点：
+
+1. 日志字段不够清楚，难以区分原始检索证据、扩展上下文和最终引用证据。
+2. 扩展 chunk 的筛选规则还需要更可控，避免把无关上下文拼入最终提示词。
+
+因此本轮对 Stage3 做了两次小范围优化，均不改变 Stage1/Stage2 主逻辑。
+
+### 二、第一次优化：补充日志字段与轻量过滤
+
+本次优化目标是让 Stage3 的扩展行为更可追踪，便于后续人工评分和错误归因。
+
+主要改动：
+
+1. 在 Stage3 输出和日志中区分以下字段：
+   - `retrieved_chunk_ids`：原始检索和 rerank 后命中的 chunk。
+   - `expanded_chunk_ids`：上下文扩展额外加入的 chunk。
+   - `final_citation_chunk_ids`：最终答案中实际引用或保留为引用来源的 chunk。
+2. 只对需要上下文补全的题型启用扩展，例如 `multi_doc`、`fuzzy_query`、`insufficient_evidence`。
+3. 不对 `simple_qa`、`calculation`、`code_execution`、`table_analysis` 等题型启用扩展。
+4. 只扩展排名靠前的命中 chunk，且要求扩展 chunk 与命中 chunk 属于同一文档、同一小节。
+5. 加入上下文预算限制，超过预算时不继续扩展。
+
+该版本提升了可解释性：后续可以明确判断某道题的答案问题来自“原始检索没命中”，还是“扩展上下文引入噪声”，或者“最终引用选择不准确”。
+
+### 三、第二次优化：尝试 keyword filter 后舍弃
+
+在第一次优化基础上，曾尝试加入关键词过滤，即要求扩展 chunk 包含问题关键词或改写关键词后才允许进入上下文。该策略的初衷是减少无关 chunk，但实验结果显示效果反而下降。
+
+AI Judge 辅助评分结果：
+
+| 配置 | Answer Correctness | Answer Completeness | Citation Accuracy | Faithfulness | 加权分 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Stage2 rerank | 0.625 | 0.625 | 0.625 | 0.950 | 0.706 |
+| Stage3 old selective | 0.750 | 0.725 | 0.675 | 0.950 | 0.775 |
+| Stage3 keyword filter | 0.600 | 0.600 | 0.600 | 0.900 | 0.675 |
+| Stage3 no keyword filter | 0.750 | 0.725 | 0.675 | 0.925 | 0.769 |
+
+运行指标对比：
+
+| 配置 | 题数 | 文档命中 | Gold chunk 命中 | 触发扩展题数 | 扩展 chunk 总数 | 平均延迟(ms) | 平均 token |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Stage2 rerank | 20 | 20/20 | 15/20 | 0 | 0 | 28761 | 12462 |
+| Stage3 old selective | 20 | 19/20 | 15/20 | 9 | 27 | 37057 | 13352 |
+| Stage3 keyword filter | 20 | 20/20 | 15/20 | 9 | 26 | 67001 | 13590 |
+| Stage3 no keyword filter | 20 | 19/20 | 15/20 | 9 | 27 | 72406 | 13018 |
+
+阶段判断：
+
+1. `keyword filter` 版本不保留为后续主线版本。
+2. 关键词过滤会误伤部分有效上下文，尤其是同一小节中具有补充解释作用、但未直接重复问题关键词的 chunk。
+3. `keyword filter` 版本在答案正确性、完整性、引用准确性和 faithfulness 上均低于 `old selective` 与 `no keyword filter`，因此不作为后续 C2 Stage3 结论依据。
+4. `no keyword filter` 版本与 `old selective` 在核心质量指标上基本持平，只有 faithfulness 和加权分略低，差异较小，不能判定为显著退化。
+5. `no keyword filter` 的平均延迟明显高于 `old selective`，但平均 token 并未增加，暂时更可能与 LLM/API 调用波动有关，后续不应只凭单次延迟判断算法成本。
+
+### 四、最终保留的 Stage3 版本
+
+后续 Stage3 暂时采用以下版本：
+
+```text
+选择性上下文扩展 + 清晰日志字段 + 同文档/同小节约束 + 上下文预算限制
+```
+
+不保留：
+
+```text
+keyword filter 版本
+```
+
+保留版本的主要规则：
+
+1. 只在 `multi_doc`、`fuzzy_query`、`insufficient_evidence` 等题型上考虑扩展。
+2. 不在简单问答、计算、代码执行、表格分析等题型上扩展。
+3. 只扩展排名靠前的命中 chunk。
+4. 只扩展同一 `doc_id`、同一小节内的相邻 chunk。
+5. 使用上下文预算限制，超过预算则跳过扩展。
+6. 日志中必须保留 `retrieved_chunk_ids`、`expanded_chunk_ids`、`final_citation_chunk_ids`。
+
+### 五、当前结论
+
+1. Stage3 固定邻接扩展已经被淘汰，不适合作为正式方案。
+2. Stage3 选择性扩展比固定扩展更合理，能够减少无效上下文注入，并提供可追踪日志。
+3. keyword filter 版本实测效果较差，后续不再作为主线版本。
+4. 当前保留的 no keyword filter 版本在 AI Judge 辅助评分中基本恢复到 old selective 水平，但仍不能证明稳定优于 Stage2。
+5. C2 当前最稳的结论仍然是：Stage2 的 hybrid retrieval + rerank 对检索和答案质量提升最明确；Stage3 context expansion 可作为边界分析和失败案例讨论，不宜过度强调为主要增益点。
+
+### 六、后续动作
+
+1. 唐宁后续人工评分时，重点检查 Stage3 no keyword filter 版本中 Q007、Q013、Q014、Q017 等低分题。
+2. 人工评分需要区分三类问题：
+   - 原始检索未命中。
+   - 扩展上下文引入噪声。
+   - 最终答案引用不准确。
+3. 最终报告中，Stage3 应写成“经过选择性扩展优化后可用性改善，但收益不稳定”，而不是写成“Stage3 明显优于 Stage2”。
+4. AI Judge 评分只作为辅助参考，正式结论仍以人工 `Answer Correctness` 和 `Citation Accuracy` 为准。

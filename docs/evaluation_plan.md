@@ -66,6 +66,24 @@
 - `0.5`：部分正确
 - `0`：错误、答偏、或基本没完成
 
+## 4.1 LLM-as-judge 辅助评分
+
+项目保留原本设计的 AI Judge 自动化评分机制。它可以用于批量初筛、阶段对比和定位可疑样例，但不能替代人工评分。
+
+当前分两种用法：
+
+1. 旧版答案正确率评分：只输出 `correctness_score`，适合延续 C2 已有实验记录。
+2. 新版多维评分：输出 `answer_correctness_score`、`answer_completeness_score`、`citation_accuracy_score`、`faithfulness_score` 和 `llm_judge_weighted_score`。
+
+推荐流程：
+
+1. 先跑自动实验，得到 `runs/results/*.csv`。
+2. 再跑 AI Judge，得到 `*_scored.csv` 或 `*_llm_judged.csv`。
+3. B 成员优先人工复核低分题、AI Judge 与直觉冲突题、以及会影响结论的关键题。
+4. 正式结论以人工评分为准，AI Judge 作为辅助证据写入实验过程。
+
+注意：`codex_precheck` 只是组长临时辅助判断，不作为正式评分文件保留。
+
 ## 5. 常用失败标签
 
 - `retrieval_miss`

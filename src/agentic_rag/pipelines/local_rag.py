@@ -372,6 +372,38 @@ def build_citations(hits: list[EvidenceChunk]) -> list[dict[str, str]]:
     return [{"doc_id": hit.doc_id, "chunk_id": hit.chunk_id} for hit in hits]
 
 
+def _unique_ids(ids: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in ids:
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _hit_chunk_ids(hits: list[EvidenceChunk]) -> list[str]:
+    return _unique_ids([hit.chunk_id for hit in hits])
+
+
+def _expanded_context_chunk_ids(hits: list[EvidenceChunk]) -> list[str]:
+    expanded: list[str] = []
+    for hit in hits:
+        if not hit.context_expansion_applied:
+            continue
+        expanded.extend(
+            chunk_id
+            for chunk_id in hit.expanded_chunk_ids
+            if chunk_id != hit.chunk_id
+        )
+    return _unique_ids(expanded)
+
+
+def _citation_chunk_ids(citations: list[dict[str, str]]) -> list[str]:
+    return _unique_ids([item.get("chunk_id", "") for item in citations])
+
+
 def build_context_expansion_summary(hits: list[EvidenceChunk]) -> list[dict[str, Any]]:
     return [
         {
@@ -410,6 +442,7 @@ def run_c0_with_index(
     answer_usage: dict[str, int] = {}
     rerank_usage: dict[str, int] = {}
     ark_embedding_usage: dict[str, Any] = {}
+    retrieved_chunk_ids: list[str] = []
     try:
         hits, rerank_usage, ark_embedding_usage = retrieve_with_index(
             index,
@@ -424,6 +457,7 @@ def run_c0_with_index(
             rerank_pool_size=rerank_pool_size,
             allowed_doc_ids=allowed_doc_ids,
         )
+        retrieved_chunk_ids = _hit_chunk_ids(hits)
         hits = expand_hits_with_neighbors(
             hits,
             index,
@@ -440,6 +474,7 @@ def run_c0_with_index(
     except Exception as exc:
         error = str(exc)
     latency_ms = int((time.perf_counter() - started) * 1000)
+    citations = build_citations(hits)
     result = {
         "run_id": _now_run_id("c0"),
         "config": "c0_naive",
@@ -447,8 +482,11 @@ def run_c0_with_index(
         "original_query": question,
         "retrieval_queries": [question],
         "retrieved_chunks": [hit.to_dict() for hit in hits],
+        "retrieved_chunk_ids": retrieved_chunk_ids if hits else [],
+        "expanded_chunk_ids": _expanded_context_chunk_ids(hits),
         "answer": answer,
-        "citations": build_citations(hits),
+        "citations": citations,
+        "final_citation_chunk_ids": _citation_chunk_ids(citations),
         "context_expansion": build_context_expansion_summary(hits),
         "latency_ms": latency_ms,
         "token_usage": {
@@ -498,6 +536,7 @@ def run_c1_with_index(
     answer_usage: dict[str, int] = {}
     rerank_usage: dict[str, int] = {}
     ark_embedding_usage = {}
+    retrieved_chunk_ids: list[str] = []
     try:
         rewrite_result = rewrite_query(question, prompt_file=prompt_file)
         retrieval_queries = build_retrieval_queries(question, rewrite_result)
@@ -514,13 +553,14 @@ def run_c1_with_index(
             rerank_pool_size=rerank_pool_size,
             allowed_doc_ids=allowed_doc_ids,
         )
+        retrieved_chunk_ids = _hit_chunk_ids(hits)
         hits = expand_hits_with_neighbors(
             hits,
             index,
             neighbors=context_neighbor_chunks,
             selective=context_neighbor_chunks > 0,
             task_type=task_type,
-            question=question,
+            question="\n".join(retrieval_queries),
         )
         answer, answer_usage = generate_answer_from_hits(
             question,
@@ -530,6 +570,7 @@ def run_c1_with_index(
     except Exception as exc:
         error = str(exc)
     latency_ms = int((time.perf_counter() - started) * 1000)
+    citations = build_citations(hits)
     result = {
         "run_id": _now_run_id("c1"),
         "config": "c1_rewrite",
@@ -543,9 +584,12 @@ def run_c1_with_index(
         "rewritten_queries": rewrite_result.rewritten_queries,
         "retrieval_queries": retrieval_queries,
         "retrieved_chunks": [hit.to_dict() for hit in hits],
+        "retrieved_chunk_ids": retrieved_chunk_ids if hits else [],
+        "expanded_chunk_ids": _expanded_context_chunk_ids(hits),
         "answer": answer,
         "query_rewrite_model_raw": rewrite_result.raw_output,
-        "citations": build_citations(hits),
+        "citations": citations,
+        "final_citation_chunk_ids": _citation_chunk_ids(citations),
         "context_expansion": build_context_expansion_summary(hits),
         "latency_ms": latency_ms,
         "token_usage": {
