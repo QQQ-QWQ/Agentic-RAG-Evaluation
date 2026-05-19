@@ -18,10 +18,14 @@ from agentic_rag.deep_planning.presets import describe_presets, list_preset_ids,
 from agentic_rag.experiment.kb_ingest import ingest_local_file_to_kb
 from agentic_rag.experiment.runner import run_document_rag, run_knowledge_base_rag
 from agentic_rag.tools.file_tool import (
+    edit_file_content,
+    format_file_edit_response,
     format_file_ingest_response,
     format_file_read_response,
+    format_file_write_response,
     ingest_file_to_kb,
     read_file_content,
+    write_file_content,
 )
 from agentic_rag.tools.firecrawl_tool import (
     firecrawl_configured,
@@ -240,7 +244,93 @@ def _build_c4_file_tools(*, enable_c4_tools: bool) -> list[Any]:
         )
         return format_file_ingest_response(report)
 
-    return [topic4_file_read, topic4_file_ingest]
+    tools: list[Any] = [topic4_file_read, topic4_file_ingest]
+
+    if app_config.FILE_WRITE_ENABLED:
+
+        @tool
+        def topic4_file_write(
+            file_path: str,
+            content: str,
+            mode: str = "overwrite",
+        ) -> str:
+            """【C4 · 本地文件 · 写入】在工程根内创建或覆盖/追加 UTF-8 文本文件。
+
+            禁止写入 .env、.git、uv.lock、pyproject.toml 等受保护路径。
+            推荐目录：data/raw/、runs/。写入系统库后请 kb sync 或 topic4_file_ingest。
+            """
+            root = Path(app_config.PROJECT_ROOT).resolve()
+            m = (mode or "overwrite").strip().lower()
+            if m not in ("overwrite", "append"):
+                m = "overwrite"
+            res = write_file_content(
+                file_path,
+                content,
+                mode=m,  # type: ignore[arg-type]
+                project_root=root,
+            )
+            return format_file_write_response(res)
+
+        @tool
+        def topic4_file_edit(
+            file_path: str,
+            old_string: str,
+            new_string: str,
+            replace_all: bool = False,
+        ) -> str:
+            """【C4 · 本地文件 · 编辑】在工程根内对已有文本做 search-and-replace。
+
+            old_string 须能唯一定位（或设 replace_all=true）。仅 UTF-8 文本。
+            """
+            root = Path(app_config.PROJECT_ROOT).resolve()
+            res = edit_file_content(
+                file_path,
+                old_string,
+                new_string,
+                replace_all=bool(replace_all),
+                project_root=root,
+            )
+            return format_file_edit_response(res)
+
+        tools.extend([topic4_file_write, topic4_file_edit])
+
+    return tools
+
+
+def _build_c4_shell_tools(
+    *,
+    enable_c4_tools: bool,
+    sandbox_workspace: Path | None,
+) -> list[Any]:
+    if not enable_c4_tools or not app_config.SHELL_COMMAND_ENABLED:
+        return []
+
+    from agentic_rag.tools.shell_tool import format_shell_response, run_shell_under_project
+
+    root = Path(app_config.PROJECT_ROOT).resolve()
+    default_ws = Path(sandbox_workspace).resolve() if sandbox_workspace else root
+
+    @tool
+    def topic4_shell_exec(command: str, working_dir: str = "") -> str:
+        """【C4 · 命令执行】在工程根内子目录或会话沙箱中运行 shell（Windows 为 PowerShell）。
+
+        用于 dir/ls、type/cat、简单管道等；禁止 rm -rf、改 .env、pip install 等。
+        working_dir 为空时使用会话沙箱或工程根。复杂脚本请用 topic4_code_runner。
+        """
+        cwd_hint = (working_dir or "").strip()
+        if cwd_hint:
+            payload = run_shell_under_project(
+                command,
+                working_dir=cwd_hint,
+                project_root=root,
+            )
+        else:
+            from agentic_rag.tools.shell_tool import run_shell_in_workspace
+
+            payload = run_shell_in_workspace(command, default_ws)
+        return format_shell_response(payload)
+
+    return [topic4_shell_exec]
 
 
 def _build_c4_computation_tools(
@@ -331,7 +421,7 @@ def build_topic4_rag_tools(
 ) -> list[Any]:
     """
     - C3（``enable_c4_tools=False``）：仅 ``topic4_list_rag_pipelines`` + ``topic4_rag_query``（无 Firecrawl / 本地读盘）。
-    - C4（``enable_c4_tools=True``）：Firecrawl 三件套、``topic4_file_read`` / ``topic4_file_ingest``、可选沙箱。
+    - C4（``enable_c4_tools=True``）：Firecrawl、文件读/写/编辑/入库、可选 shell 与沙箱。
 
     ``use_knowledge_base`` 未指定时：``doc_path is None`` → Chroma 全库，否则单文档。
     """
@@ -411,6 +501,10 @@ def build_topic4_rag_tools(
         topic4_rag_query,
         *_build_firecrawl_tools(enable_c4_tools=enable_c4_tools),
         *_build_c4_file_tools(enable_c4_tools=enable_c4_tools),
+        *_build_c4_shell_tools(
+            enable_c4_tools=enable_c4_tools,
+            sandbox_workspace=sandbox_workspace,
+        ),
         *_build_c4_computation_tools(
             enable_c4_tools=enable_c4_tools,
             sandbox_workspace=sandbox_workspace,

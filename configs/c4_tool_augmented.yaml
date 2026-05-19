@@ -45,8 +45,9 @@ tool_selection:
 
 tool_safety:
   code_runner_timeout_seconds: 5
-  allow_file_write: false
+  allow_file_write: true
   allow_network: false
+  notes: "写盘/命令由 .env 的 FILE_WRITE_ENABLED、SHELL_COMMAND_ENABLED 与 path_policy 约束"
 
 self_check:
   enabled: true

@@ -684,7 +684,7 @@ def launch_c34_gradio_client(
             fc_hint = (
                 "C4：已配置 Firecrawl（可从对话中识别 URL 并抓取）"
                 if firecrawl_configured()
-                else "C4：未配置 FIRECRAWL_API_KEY（无网页抓取；仍可用 topic4_file_read / topic4_file_ingest）"
+                else "C4：未配置 FIRECRAWL_API_KEY（无网页抓取；仍可用文件读/写/编辑、shell、入库等本地工具）"
             )
         else:
             fc_hint = "C3：仅知识库检索，无 Firecrawl / 读本地文件工具"

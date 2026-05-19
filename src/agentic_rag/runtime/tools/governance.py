@@ -29,7 +29,10 @@ _C3_NAMES = frozenset(
 _C4_EXTRA = frozenset(
     {
         "topic4_file_read",
+        "topic4_file_write",
+        "topic4_file_edit",
         "topic4_file_ingest",
+        "topic4_shell_exec",
         "topic4_firecrawl_scrape",
         "topic4_firecrawl_search",
         "topic4_firecrawl_scrape_to_kb",
@@ -52,7 +55,10 @@ def get_all_base_tool_specs(*, enable_c4: bool) -> list[ToolSpec]:
         specs.extend(
             [
                 ToolSpec("topic4_file_read", "读取本地文件（MarkItDown / parse_path）"),
+                ToolSpec("topic4_file_write", "工程内写入/追加 UTF-8 文本"),
+                ToolSpec("topic4_file_edit", "工程内文本 search-replace"),
                 ToolSpec("topic4_file_ingest", "本地文件入库并重建 Chroma 索引"),
+                ToolSpec("topic4_shell_exec", "工程内受限 shell（PowerShell/sh）"),
                 ToolSpec("topic4_calculator", "安全算术表达式"),
                 ToolSpec("topic4_table_analyzer", "CSV/TSV 统计"),
                 ToolSpec("topic4_code_runner", "沙箱内 Python + 只读文件挂载"),

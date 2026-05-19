@@ -37,7 +37,7 @@
 | `batch_experiment_guide.md` | 已建立 | 说明如何运行 C0/C1 批量实验、检查输出文件、解释初版结果和处理常见问题。 |
 | `c2_ablation_guide.md` | 已建立 | C2 检索消融（混合 / +重排 / +邻接上下文）脚本用法与输出说明。 |
 | `c3_smoke_experiment_guide.md` | 2026-05-18 | C3 小批量验证实验说明：Q021-Q030 运行方式、输出文件、结果摘要、人工复核要求。 |
-| （README §12 + ARCHITECTURE §5） | 2026-05-19 | 课题进度、打开方式、C4 工具与 C3/C4 批量；见 `experiment_notes.md` 2026-05-19。 |
+| （README §12 + ARCHITECTURE §5） | 2026-05-19 | 课题进度、C4 工具（含写盘/shell）、C3/C4 批量；见 `experiment_notes.md` 2026-05-19 各条目。 |
 | `evaluation_ai_judge.md` | 已建立 | 独立 AI 评判（LLM-as-judge）模块定位、字段与与人评对齐说明。 |
 | `ARCHITECTURE.md` | 持续更新 | 包结构、模块职责、**`main.py client` / Runtime / 审计线**；§5 修订记录。 |
 | `agent_runtime_architecture.md` | 2026-05-17–18 | Agent Runtime 骨架、`QueryEngine` 与 C3/C4 客户端；C4 Firecrawl / `topic4_file_*` 完成度。 |

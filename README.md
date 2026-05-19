@@ -497,12 +497,15 @@ ARK_API_KEY=your_key_here
 DEEPSEEK_API_KEY=your_key_here
 ```
 
-可选（C4 网页 / 沙箱）：
+可选（C4 网页 / 沙箱 / 写盘 / shell）：
 
 ```text
 FIRECRAWL_API_KEY=...
 SANDBOX_ENABLED=true
 SANDBOX_TIMEOUT_SEC=60
+FILE_WRITE_ENABLED=true
+SHELL_COMMAND_ENABLED=true
+SHELL_TIMEOUT_SEC=60
 ```
 
 注意：`.env` 勿提交 GitHub；命令统一使用 `uv run python ...`。
@@ -522,7 +525,7 @@ uv run python main.py kb sync   # 首次或 raw 变更后重建全库 Chroma
 | C0 / C1 批量（20 题） | ✅ | `experiment batch`，见 `runs/results/c0_*`、`c1_*` |
 | C2 检索消融（三阶段） | ✅ | `experiment c2`，见 `runs/results/c2_*` |
 | C3 三层编排 + 客户端 | ✅ | `main.py client --c3`；smoke 题 Q021–Q030 |
-| C4 工具 + 本地沙箱 | ✅ | 读文件 / Firecrawl / calculator / table_analyzer / code_runner |
+| C4 工具 + 本地沙箱 | ✅ | 读/写/编辑文件、shell、Firecrawl、calculator / table / code_runner |
 | C3/C4 批量评测脚本 | ✅ | `run_c34_batch_eval.py`（与 client 共用 QueryEngine） |
 | Gradio 编排过程流式展示 | ✅ | `client` 发送后可见 L1/L2/L3 进度 |
 | 题集 40–50 题 | ⏳ | 现主集 20 + C3 候选 10 |

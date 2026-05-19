@@ -48,6 +48,23 @@ SANDBOX_ENABLED = (_env("SANDBOX_ENABLED", "false") or "false").lower() in (
 SANDBOX_TIMEOUT_SEC = float(_env("SANDBOX_TIMEOUT_SEC", "60") or "60")
 SANDBOX_MAX_CODE_CHARS = int(_env("SANDBOX_MAX_CODE_CHARS", "50000") or "50000")
 
+# C4：工程内文本写盘 / 局部编辑（须路径在工程根内且未命中 path_policy 拒绝规则）
+FILE_WRITE_ENABLED = (_env("FILE_WRITE_ENABLED", "true") or "true").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+# C4：在工程根或会话沙箱目录执行受限 shell（PowerShell / sh）
+SHELL_COMMAND_ENABLED = (_env("SHELL_COMMAND_ENABLED", "true") or "true").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+SHELL_TIMEOUT_SEC = float(_env("SHELL_TIMEOUT_SEC", "60") or "60")
+
 # Agent 工具 topic4_file_read（MarkItDown 分支）：单文件最大字节（防止一次读爆内存）
 MARKITDOWN_MAX_FILE_BYTES = int(
     _env("MARKITDOWN_MAX_FILE_BYTES", str(25 * 1024 * 1024)) or str(25 * 1024 * 1024)

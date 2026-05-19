@@ -117,13 +117,16 @@ flowchart LR
 |------|------|
 | `tools/__init__.py` | 导出 MarkItDown 封装等。 |
 | `tools/markitdown_tool.py` | [MarkItDown](https://github.com/microsoft/markitdown) 将**工程根内**文件转 Markdown；由 `topic4_file_read` 在根内分支调用，与 `documents.parse_path` 并行。 |
-| `tools/file_tool.py` | C4 **`topic4_file_read`** / **`topic4_file_ingest`** 底层：读盘（根内 MarkItDown、根外只读解析）、入库（盘外复制到 `data/raw/user_docs/`）。 |
+| `tools/file_tool.py` | C4 文件族底层：**读**（根内 MarkItDown、根外 parse）、**写/追加**（`write_file_content`）、**编辑**（search-replace）、**入库**（`ingest_file_to_kb`）。 |
+| `tools/path_policy.py` | 工程内路径解析；写盘/shell **拒绝** `.env`、`.git/`、`uv.lock`、`documents.csv` 等。 |
+| `tools/shell_tool.py` | C4 **`topic4_shell_exec`**：在工程子目录或会话沙箱执行受限 PowerShell/sh。 |
 | `tools/firecrawl_tool.py` | C4 **Firecrawl**（`firecrawl-py`）：`topic4_firecrawl_scrape` / `search` / `scrape_to_kb`；快照目录 `data/raw/web_snapshots/`。 |
 | `tools/calculator_tool.py` | C4 **`topic4_calculator`**：AST 白名单安全算术（题集 `calculation`）。 |
 | `tools/table_analyzer_tool.py` | C4 **`topic4_table_analyzer`**：pandas 读 CSV/TSV（跳过 Markdown 前言）；非 MarkItDown。 |
 | `tools/code_runner_tool.py` | C4 **`topic4_code_runner`**：会话沙箱内跑 Python，可选 `read_only_paths` 挂载工程内文件副本。 |
 | `tools/response_format.py` | 第二层工具统一 JSON：`schema_version: topic4.tool.v1`。 |
 | `sandbox/local_subprocess.py` | `exec_python_snippet`：`cwd`=临时目录，超时 `SANDBOX_TIMEOUT_SEC`（**非**远端 sandbox）。 |
+| `sandbox/shell_runner.py` | `exec_shell_command`：Windows 用 PowerShell；命令黑名单（`rm -rf`、`pip install` 等）。 |
 
 ### 2.5 `ark/` — 火山方舟向量
 
@@ -168,8 +171,8 @@ flowchart LR
 | 路径 | 作用 |
 |------|------|
 | `deep_planning/session_planner.py` | **第一层**：DeepSeek 结构化规划（`needs_web_tools` / `web_urls` / `local_paths`、`kb_mutation_intent`、`plan_for_layer2`）；C4 时 `format_c4_parsed_input_block` 向 L2 注入预解析链接与路径；仅 JSON，不调工具。 |
-| `deep_planning/agent_runner.py` | `build_deepseek_chat_model`、`build_topic4_deep_agent`；L2 提示含 RAG、**`topic4_file_read`/`topic4_file_ingest`**、Firecrawl（C4）、可选沙箱。 |
-| `deep_planning/tools_factory.py` | LangChain 工具注册与 `wrap_tools_with_audit`；C3 仅 RAG 两工具；C4 另 file/Firecrawl/**calculator/table_analyzer/code_runner**（+ 兼容 `sandbox_exec_python`）。 |
+| `deep_planning/agent_runner.py` | `build_deepseek_chat_model`、`build_topic4_deep_agent`；L2 提示含 RAG、文件读/写/编辑/入库、Firecrawl（C4）、shell、可选沙箱。 |
+| `deep_planning/tools_factory.py` | LangChain 工具注册与 `wrap_tools_with_audit`；C3 仅 RAG 两工具；C4 另 **file 读/写/编辑/入库**、Firecrawl、**calculator/table_analyzer/code_runner**、**`topic4_shell_exec`**（+ 兼容 `sandbox_exec_python`）。 |
 | `experiment/c34_batch.py` | C3/C4 批量：`resolve_batch_tasks`（`c3_smoke` / `c4_tools` / `main_20` / `ids`）+ 共用 `QueryEngine`。 |
 | `telemetry/streaming_hooks.py` | 编排钩子合并 + `RuntimeEvent` 转发（Gradio 流式与批量 `--verbose-events`）。 |
 | `deep_planning/presets.py` | RAG 管线预设（`project_default`、`c0_naive`、C2 阶段等），与 `RunProfile` 对齐。 |
@@ -211,7 +214,7 @@ uv run python main.py
 | `cli/hub.py` | 集成工作台：`[4]` 单文档 RAG；**`[5]`** 引导启动 C3/C4 并选择检索范围。 |
 | `cli/demos.py` | 旧版 `main.py ui`：单文件 Gradio 上传 + `local_rag_answer`（**无**三层编排）。 |
 
-**C3 vs C4（客户端）**：`OrchestrationConfig.enable_c4_tools`；C3 仅 `topic4_list_rag_pipelines` + `topic4_rag_query`；C4 另可 **file / Firecrawl / calculator / table_analyzer / code_runner**（沙箱须 `SANDBOX_ENABLED=true` 且会话传入 `sandbox_workspace`）。
+**C3 vs C4（客户端）**：`OrchestrationConfig.enable_c4_tools`；C3 仅 `topic4_list_rag_pipelines` + `topic4_rag_query`；C4 另可 **file 读/写/编辑/入库**、**`topic4_shell_exec`**、Firecrawl、calculator / table_analyzer / code_runner（Python 沙箱须 `SANDBOX_ENABLED=true` 且会话传入 `sandbox_workspace`）。写盘与 shell 由 `FILE_WRITE_ENABLED`、`SHELL_COMMAND_ENABLED` 控制（默认 true，见 `.env.example`）。
 
 ```mermaid
 flowchart TB
@@ -219,13 +222,15 @@ flowchart TB
   L1 --> L2[L2 create_deep_agent tool calling]
   L2 --> T{工具}
   T --> RAG[topic4_rag_query]
-  T --> FILE[topic4_file_read / ingest]
+  T --> FILE[file read / write / edit / ingest]
+  T --> SH[topic4_shell_exec]
   T --> FC[Firecrawl 可选]
   T --> CALC[topic4_calculator]
   T --> TBL[topic4_table_analyzer]
   T --> CODE[topic4_code_runner / sandbox]
   RAG --> L2
   FILE --> L2
+  SH --> L2
   FC --> L2
   CALC --> L2
   TBL --> L2
@@ -238,6 +243,8 @@ flowchart TB
 **MarkItDown 与 table_analyzer 分工**：`topic4_file_read` 在工程根内把 Office/PDF 等转为 Markdown 文本；`topic4_table_analyzer` 对 **已是 CSV/TSV** 的文件做统计（`value_counts`、`column_mean` 等），二者不互相替代。
 
 **客户端边界（2026-05-20）**：系统全库由 **`main.py kb sync`** 维护；会话附加文件默认 **全库+临时索引组合检索**（`full_kb_and_ephemeral`），亦可选仅临时或仅全库。临时索引仍不写 `documents.csv`。**`topic4_file_ingest`** 仅用于系统 raw 补登。URL 由 C4 Firecrawl 动态抓取。
+
+**文件写盘边界（2026-05-19）**：`topic4_file_write` / `topic4_file_edit` 仅允许工程根内路径，且经 `path_policy` 拒绝 `.env`、`.git/`、`pyproject.toml`、`documents.csv` 等；推荐写入 `data/raw/`、`runs/`。写入 raw 系统目录后仍需 **`kb sync`** 或 **`topic4_file_ingest`** 才更新 Chroma。`topic4_shell_exec` 在工程子目录或会话沙箱执行，**不能**替代任意主机管理员权限。
 
 **规划前查询改写**：`OrchestrationConfig.enable_planning_query_rewrite` 默认 **False**（Gradio 未暴露开关）；`main.py agent --planning-rewrite` 可开启。检索管线（如 `c2_stage3_context`）内的 C1 改写仍随 `RunProfile.use_query_rewrite` 生效。
 
@@ -282,6 +289,7 @@ flowchart TB
 - `.env`：优先加载项目根 `.env`（`override=True`，避免 shell 中空变量挡住文件中的密钥）；父目录 `.env` 次之。`DEEPSEEK_API_KEY` 未设时可回退 `OPENAI_API_KEY`（兼容 `.env.example` 写法）。
 - 沙箱（可选）：`SANDBOX_ENABLED`、`SANDBOX_TIMEOUT_SEC`、`SANDBOX_MAX_CODE_CHARS`（本地 subprocess + 临时目录，非 VM）。更强隔离可选自建 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox/blob/master/README_zh.md) 等兼容 E2B 的远端环境，与本仓库无自动对接。
 - MarkItDown / `topic4_file_read`：`MARKITDOWN_MAX_FILE_BYTES`（单文件字节上限，防 OOM）。
+- C4 写盘 / shell：`FILE_WRITE_ENABLED`、`SHELL_COMMAND_ENABLED`（默认 true）；`SHELL_TIMEOUT_SEC`。
 - Firecrawl：`FIRECRAWL_API_KEY`、`FIRECRAWL_MAX_OUTPUT_CHARS`、`FIRECRAWL_SEARCH_LIMIT`（见 `.env.example`）。
 
 ---
@@ -362,7 +370,7 @@ flowchart TB
 |------|------|------|
 | 三层编排 | `main.py client` / `agent` / `hub [5]` | ✅ L1 规划 → L2 Deep Agent → L3 研判 |
 | C3 仅检索工具 | `client --c3` | ✅ `topic4_rag_query` |
-| C4 工具增强 | `client --c4` | ✅ file / Firecrawl / calculator / table_analyzer / code_runner |
+| C4 工具增强 | `client --c4` | ✅ file 读/写/编辑/入库、shell、Firecrawl、calculator / table / code_runner |
 | Gradio 流式进度 | `iter_c34_turn_stream` | ✅ L1/L2/L3 事件增量展示 |
 | C3/C4 批量日志 | `runs/logs/c3_agentic_retrieval_batch/` 等 | ✅ `run_logs.jsonl` + `batch_report.json` |
 | 知识库对齐核验 | 编排默认开启 | ✅ `kb_grounding` → 供 L3 参考 |
@@ -403,6 +411,7 @@ uv run python main.py client --c4 --resume-session <审计id>
 
 | 日期 | 摘要 |
 |------|------|
+| 2026-05-19 | **C4 文件写盘与 shell**：`topic4_file_write`、`topic4_file_edit`、`topic4_shell_exec`；`tools/path_policy.py`、`sandbox/shell_runner.py`；`FILE_WRITE_ENABLED` / `SHELL_COMMAND_ENABLED`；单测 `tests/test_file_ops_tools.py`。详见 `docs/experiment_notes.md` 同日「文件写盘与命令执行」条目。 |
 | 2026-05-19 | **C4 开题四工具**：`topic4_calculator`、`topic4_table_analyzer`、`topic4_code_runner`（+ `sandbox/local_subprocess`）；**C3/C4 批量** `experiment/c34_batch.py`、`run_c34_batch_eval.py`；**Gradio 流式** `iter_c34_turn_stream` + `telemetry/streaming_hooks.py`；修复 `orchestration/loop.py` 重复 `enable_c4_tools`；单测 `tests/test_c4_computation_tools.py`。详见 `docs/experiment_notes.md` 2026-05-19。 |
 | 2026-05-20 | **日志与恢复**：`client --resume-session`；`logs` 页 Chatbot 预览 + 继续命令；审计 `session_id` 显式传递（修复 `anonymous` 混写）。**编排修复**：`tool_audit` 兼容 Pydantic `StructuredTool`；编排异常写入 transcript。 |
 | 2026-05-20 | **全库+附加融合检索**：`run_combined_kb_ephemeral_rag`；`retrieval_mode`（client/工作台）；`merge_evidence_hits` / `retrieve_merged_from_indexes`。 |

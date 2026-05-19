@@ -13,7 +13,13 @@ from typing import Any, Literal
 
 from agentic_rag import config
 from agentic_rag.tools.markitdown_tool import convert_local_file_to_markdown_safe
+from agentic_rag.tools.path_policy import (
+    assert_write_path_allowed,
+    normalize_user_path,
+)
 from agentic_rag.tools.response_format import tool_response_json
+
+MAX_FILE_WRITE_CHARS = 500_000
 
 ReadBackend = Literal["markitdown", "parse_path"]
 
@@ -184,6 +190,243 @@ def ingest_file_to_kb(
         title=title.strip() or None,
         source_note=source_note,
         copy_file=copy_file,
+    )
+
+
+@dataclass(frozen=True)
+class FileWriteResult:
+    ok: bool
+    path: str
+    rel_path: str
+    bytes_written: int
+    mode: str
+    error: str | None = None
+
+
+def write_file_content(
+    file_path: str,
+    content: str,
+    *,
+    mode: Literal["overwrite", "append"] = "overwrite",
+    project_root: Path | None = None,
+    create_dirs: bool = True,
+) -> FileWriteResult:
+    """在工程根内创建或写入文本文件（受 path_policy 约束）。"""
+    root = (project_root or config.PROJECT_ROOT).resolve()
+    resolved = normalize_user_path(file_path, project_root=root)
+    if not resolved.ok:
+        return FileWriteResult(
+            ok=False,
+            path=file_path,
+            rel_path="",
+            bytes_written=0,
+            mode=mode,
+            error=resolved.error,
+        )
+    try:
+        assert_write_path_allowed(resolved.rel_posix)
+    except PermissionError as exc:
+        return FileWriteResult(
+            ok=False,
+            path=str(resolved.path),
+            rel_path=resolved.rel_posix,
+            bytes_written=0,
+            mode=mode,
+            error=str(exc),
+        )
+
+    text = content if content is not None else ""
+    if len(text) > MAX_FILE_WRITE_CHARS:
+        return FileWriteResult(
+            ok=False,
+            path=str(resolved.path),
+            rel_path=resolved.rel_posix,
+            bytes_written=0,
+            mode=mode,
+            error=f"内容超过 {MAX_FILE_WRITE_CHARS} 字符限制",
+        )
+
+    fp = resolved.path
+    if create_dirs:
+        fp.parent.mkdir(parents=True, exist_ok=True)
+    write_mode = "a" if mode == "append" else "w"
+    try:
+        with fp.open(write_mode, encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        nbytes = len(text.encode("utf-8"))
+    except OSError as exc:
+        return FileWriteResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            bytes_written=0,
+            mode=mode,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    return FileWriteResult(
+        ok=True,
+        path=str(fp),
+        rel_path=resolved.rel_posix,
+        bytes_written=nbytes,
+        mode=mode,
+    )
+
+
+@dataclass(frozen=True)
+class FileEditResult:
+    ok: bool
+    path: str
+    rel_path: str
+    replacements: int
+    error: str | None = None
+
+
+def edit_file_content(
+    file_path: str,
+    old_string: str,
+    new_string: str,
+    *,
+    replace_all: bool = False,
+    project_root: Path | None = None,
+) -> FileEditResult:
+    """在工程根内对文本文件做局部替换（须唯一匹配，除非 replace_all）。"""
+    root = (project_root or config.PROJECT_ROOT).resolve()
+    resolved = normalize_user_path(file_path, project_root=root)
+    if not resolved.ok:
+        return FileEditResult(
+            ok=False,
+            path=file_path,
+            rel_path="",
+            replacements=0,
+            error=resolved.error,
+        )
+    try:
+        assert_write_path_allowed(resolved.rel_posix)
+    except PermissionError as exc:
+        return FileEditResult(
+            ok=False,
+            path=str(resolved.path),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error=str(exc),
+        )
+
+    fp = resolved.path
+    if not fp.is_file():
+        return FileEditResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error=f"文件不存在：{fp}",
+        )
+
+    needle = old_string if old_string is not None else ""
+    if not needle:
+        return FileEditResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error="old_string 不能为空",
+        )
+
+    try:
+        original = fp.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return FileEditResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error="仅支持 UTF-8 文本文件编辑",
+        )
+
+    count = original.count(needle)
+    if count == 0:
+        return FileEditResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error="未找到 old_string，未修改文件",
+        )
+    if count > 1 and not replace_all:
+        return FileEditResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error=f"old_string 出现 {count} 次，请设 replace_all=true 或提供更精确的片段",
+        )
+
+    if replace_all:
+        updated = original.replace(needle, new_string if new_string is not None else "")
+        replacements = count
+    else:
+        updated = original.replace(needle, new_string if new_string is not None else "", 1)
+        replacements = 1
+
+    if len(updated) > MAX_FILE_WRITE_CHARS:
+        return FileEditResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error=f"编辑后超过 {MAX_FILE_WRITE_CHARS} 字符限制",
+        )
+
+    try:
+        fp.write_text(updated, encoding="utf-8", newline="\n")
+    except OSError as exc:
+        return FileEditResult(
+            ok=False,
+            path=str(fp),
+            rel_path=resolved.rel_posix,
+            replacements=0,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+    return FileEditResult(
+        ok=True,
+        path=str(fp),
+        rel_path=resolved.rel_posix,
+        replacements=replacements,
+    )
+
+
+def format_file_write_response(res: FileWriteResult) -> str:
+    hints: list[str] = []
+    if res.ok:
+        hints.append("写入后若需纳入全库检索，可执行 main.py kb sync 或 topic4_file_ingest。")
+    return tool_response_json(
+        "topic4_file_write",
+        ok=res.ok,
+        data={
+            "path": res.path,
+            "rel_path": res.rel_path,
+            "bytes_written": res.bytes_written,
+            "mode": res.mode,
+        },
+        error=res.error,
+        hints=hints,
+    )
+
+
+def format_file_edit_response(res: FileEditResult) -> str:
+    hints: list[str] = []
+    if res.ok:
+        hints.append(f"已替换 {res.replacements} 处；大改内容可用 topic4_file_write。")
+    return tool_response_json(
+        "topic4_file_edit",
+        ok=res.ok,
+        data={
+            "path": res.path,
+            "rel_path": res.rel_path,
+            "replacements": res.replacements,
+        },
+        error=res.error,
+        hints=hints,
     )
 
 

@@ -1702,3 +1702,42 @@ Deep Agents 参考：[Overview](https://docs.langchain.com/oss/python/deepagents
 2. 题集扩至 40–50 题。  
 3. 补 C4 消融配置与 Benchmark/C5 样例。  
 4. 整理 10+ 失败案例写入计划中的 `failure_cases.md`。
+
+## 2026-05-19 C4 文件写盘、编辑与受限 shell（工程增补）
+
+记录人：李金航
+
+阶段：C4 工具增强 — 工程内文本写入/局部编辑、PowerShell/sh 命令（非任意主机管理员权限）。
+
+对应任务：开题「文件读取/操作」与演示侧「改 raw 草稿、跑简单命令」；与既有 `topic4_file_read` / `topic4_file_ingest` 互补。
+
+### 已完成
+
+1. **写盘与编辑**（`FILE_WRITE_ENABLED`，默认 true）  
+   - `topic4_file_write`：覆盖/追加 UTF-8 文本  
+   - `topic4_file_edit`：search-replace（可 `replace_all`）  
+   - 底层 `tools/file_tool.py` + `tools/path_policy.py`（禁止 `.env`、`.git/`、`uv.lock`、`documents.csv` 等）
+
+2. **命令执行**（`SHELL_COMMAND_ENABLED`，默认 true）  
+   - `topic4_shell_exec`：工程子目录或会话沙箱 cwd；Windows 为 PowerShell  
+   - `sandbox/shell_runner.py`：命令黑名单（`rm -rf`、`pip install` 等）
+
+3. **注册与文档**  
+   - `tools_factory.py`、`governance.py`、`agent_runner` / `session_planner` 提示词  
+   - `configs/c4_tool_augmented.yaml`：`allow_file_write: true`  
+   - `tests/test_file_ops_tools.py`（5 项，与 C4 计算工具测一并 10 passed）
+
+### 环境变量
+
+```text
+FILE_WRITE_ENABLED=true
+SHELL_COMMAND_ENABLED=true
+SHELL_TIMEOUT_SEC=60
+SANDBOX_ENABLED=true    # Python 代码题仍建议开启
+```
+
+### 使用注意
+
+- 写入 `data/raw/` 后需 **`main.py kb sync`** 或 **`topic4_file_ingest`** 才进 Chroma。  
+- C3 模式仍无写盘/shell 工具。  
+- 关闭写盘：`.env` 设 `FILE_WRITE_ENABLED=false`（同时不注册 write/edit）。
