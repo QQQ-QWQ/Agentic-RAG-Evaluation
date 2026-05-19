@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import queue
+import threading
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -43,7 +46,13 @@ from agentic_rag.telemetry.chat_transcript import (
 )
 from agentic_rag.telemetry.session_trace import session_trace_path
 from agentic_rag.telemetry.client_hooks import build_client_audit_hooks, log_turn_result
+from agentic_rag.telemetry.streaming_hooks import (
+    format_runtime_event_line,
+    hooks_with_runtime_events,
+    merge_orchestration_hooks,
+)
 from agentic_rag.orchestration.types import OrchestrationConfig
+from agentic_rag.runtime.types import RuntimeEvent, SubmitResult
 
 
 def _require_agent_group() -> None:
@@ -282,6 +291,22 @@ def _engine_for_turn(
     )
 
 
+def _build_turn_hooks(
+    *,
+    tier: str,
+    session_id: str,
+    on_event: Any | None = None,
+) -> Any:
+    audit = build_client_audit_hooks(tier=tier, session_id=session_id)
+    if on_event is None:
+        return audit
+    return hooks_with_runtime_events(
+        merge_orchestration_hooks(audit),
+        on_event,
+        tier=tier,
+    )
+
+
 def run_c34_turn(
     user_text: str,
     *,
@@ -295,19 +320,18 @@ def run_c34_turn(
     engine: Any | None = None,
     audit_session_id: str | None = None,
     enable_c4: bool = False,
+    on_event: Any | None = None,
 ) -> tuple[Any | None, Path | None, str, Any]:
     """
     执行一轮完整编排（规划→执行→研判），捕获终端输出为字符串。
 
     返回 ``(agent, doc_resolved, transcript, engine)`` 供 UI 多轮复用。
-    内部统一走 ``QueryEngine``（与 REPL / headless 共用）。
+    内部统一走 ``QueryEngine``（与 REPL / headless / 批量评测共用）。
     """
+    tier = "c4" if enable_c4 else "c3"
     sid = (audit_session_id or get_audit_session_id()).strip() or new_audit_session_id()
     set_audit_session_id(sid)
-    hooks = build_client_audit_hooks(
-        tier="c4" if enable_c4 else "c3",
-        session_id=sid,
-    )
+    hooks = _build_turn_hooks(tier=tier, session_id=sid, on_event=on_event)
     qe = _engine_for_turn(
         config=config,
         cli_doc=cli_doc,
@@ -322,21 +346,109 @@ def run_c34_turn(
     audit_log(
         "client_turn_start",
         session_id=sid,
-        payload={"user_preview": user_text.strip()[:500]},
+        payload={"user_preview": user_text.strip()[:500], "tier": tier},
     )
-    result = qe.submit_message(user_text.strip())
+    result = qe.submit_message(user_text.strip(), on_event=on_event)
     transcript = result.transcript or result.assistant_text
-    log_paths = log_turn_result(
+    log_turn_result(
         user_text=user_text.strip(),
         stop_reason=result.stop_reason,
         latency_ms=result.usage.latency_ms,
         transcript_len=len(transcript),
         assistant_text=transcript,
         kb_doc_ids=kb_doc_ids,
-        tier="c4" if enable_c4 else "c3",
+        tier=tier,
         session_id=sid,
     )
     return qe.agent, qe.doc_resolved, transcript, qe
+
+
+def _compose_streaming_reply(progress_lines: list[str], final_text: str) -> str:
+    body = "\n".join(progress_lines).strip()
+    final = (final_text or "").strip() or "（无输出）"
+    if not body:
+        return final
+    return f"{body}\n\n---\n\n{final}"
+
+
+def iter_c34_turn_stream(
+    user_text: str,
+    *,
+    config: OrchestrationConfig,
+    cli_doc: Path | None = None,
+    kb_doc_ids: list[str] | None = None,
+    cli_documents_hint: str | None = None,
+    agent: Any | None = None,
+    doc_resolved: Path | None = None,
+    temperature: float = 0.35,
+    engine: Any | None = None,
+    audit_session_id: str | None = None,
+    enable_c4: bool = False,
+) -> Iterator[tuple[Any | None, Path | None, str, Any]]:
+    """
+    Gradio 流式：后台线程跑编排，按 L1/L2/L3 事件增量刷新 assistant 气泡。
+    """
+    tier = "c4" if enable_c4 else "c3"
+    sid = (audit_session_id or get_audit_session_id()).strip() or new_audit_session_id()
+    set_audit_session_id(sid)
+    event_q: queue.Queue[tuple[str, Any]] = queue.Queue()
+    result_box: dict[str, Any] = {}
+
+    def on_event(ev: RuntimeEvent) -> None:
+        event_q.put(("event", ev))
+
+    def worker() -> None:
+        try:
+            result_box["ok"] = run_c34_turn(
+                user_text,
+                config=config,
+                cli_doc=cli_doc,
+                kb_doc_ids=kb_doc_ids,
+                cli_documents_hint=cli_documents_hint,
+                agent=agent,
+                doc_resolved=doc_resolved,
+                temperature=temperature,
+                engine=engine,
+                audit_session_id=sid,
+                enable_c4=enable_c4,
+                on_event=on_event,
+            )
+        except Exception as exc:
+            result_box["err"] = exc
+        finally:
+            event_q.put(("done", None))
+
+    threading.Thread(target=worker, daemon=True).start()
+    progress: list[str] = [f"⏳ [{tier.upper()}] 编排进行中…"]
+    yield agent, doc_resolved, _compose_streaming_reply(progress, ""), engine
+
+    while True:
+        try:
+            kind, item = event_q.get(timeout=0.35)
+        except queue.Empty:
+            yield agent, doc_resolved, _compose_streaming_reply(progress, ""), engine
+            continue
+        if kind == "done":
+            break
+        if kind == "event" and isinstance(item, RuntimeEvent):
+            line = format_runtime_event_line(item)
+            if not progress or progress[-1] != line:
+                progress.append(line)
+            yield agent, doc_resolved, _compose_streaming_reply(progress, ""), engine
+
+    if "err" in result_box:
+        err = result_box["err"]
+        assert isinstance(err, Exception)
+        progress.append(f"❌ {type(err).__name__}: {err}")
+        yield agent, doc_resolved, _compose_streaming_reply(progress, ""), engine
+        raise err
+
+    pack = result_box.get("ok")
+    if not pack:
+        yield agent, doc_resolved, _compose_streaming_reply(progress, "（无结果）"), engine
+        return
+    out_agent, out_doc, transcript, out_engine = pack
+    yield out_agent, out_doc, _compose_streaming_reply(progress, transcript), out_engine
 
 
 def _prompt_retrieval_scope_console(*, has_attachments: bool) -> str:
@@ -615,46 +727,62 @@ def launch_c34_gradio_client(
             [],
         )
 
-    def _chat(
+    def _chat_stream(
         message: str,
         history: list,
         session: C34UiSession,
-    ) -> tuple[list, C34UiSession, str]:
+    ):
+        """Gradio 生成器：C3/C4 均流式展示编排进度（与批量评测共用事件钩子）。"""
         history = _normalize_chat_history(history)
         if not session.started:
-            return _chat_history_append(
-                history,
-                message or "",
-                "请先在上方选择 C3/C4 并点击「开始会话」。",
-            ), session, ""
+            yield (
+                _chat_history_append(
+                    history,
+                    message or "",
+                    "请先在上方选择 C3/C4 并点击「开始会话」。",
+                ),
+                session,
+                "",
+            )
+            return
 
         if session.audit_session_id:
             set_audit_session_id(session.audit_session_id)
 
         text = (message or "").strip()
         if not text:
-            return history or [], session, ""
+            yield history or [], session, ""
+            return
 
         if not config.DEEPSEEK_API_KEY or not config.ARK_API_KEY:
-            return _chat_history_append(
-                history,
-                text,
-                "请先在项目根 `.env` 配置 DEEPSEEK_API_KEY 与 ARK_API_KEY。",
-            ), session, ""
+            yield (
+                _chat_history_append(
+                    history,
+                    text,
+                    "请先在项目根 `.env` 配置 DEEPSEEK_API_KEY 与 ARK_API_KEY。",
+                ),
+                session,
+                "",
+            )
+            return
+
+        scope = session.doc_scope
+        if scope and (scope.use_ephemeral or scope.doc_ids):
+            apply_session_scope_to_runtime(scope)
+            kb_ids = scope.doc_ids or None
+            if scope.use_ephemeral and not scope.combine_ephemeral_with_full_kb:
+                kb_ids = None
+            hint = scope.summary_for_ui()
+        else:
+            apply_session_scope_to_runtime(SessionDocumentScope())
+            kb_ids = None
+            hint = None
+
+        partial_history = _chat_history_append(history, text, "⏳ 编排进行中…")
+        yield partial_history, session, ""
 
         try:
-            scope = session.doc_scope
-            if scope and (scope.use_ephemeral or scope.doc_ids):
-                apply_session_scope_to_runtime(scope)
-                kb_ids = scope.doc_ids or None
-                if scope.use_ephemeral and not scope.combine_ephemeral_with_full_kb:
-                    kb_ids = None
-                hint = scope.summary_for_ui()
-            else:
-                apply_session_scope_to_runtime(SessionDocumentScope())
-                kb_ids = None
-                hint = None
-            agent, doc_resolved, transcript, qe = run_c34_turn(
+            for agent, doc_resolved, reply, qe in iter_c34_turn_stream(
                 text,
                 config=session.config,
                 cli_doc=session.cli_doc,
@@ -665,15 +793,17 @@ def launch_c34_gradio_client(
                 engine=session.engine,
                 audit_session_id=session.audit_session_id,
                 enable_c4=session.enable_c4,
-            )
-            session.agent = agent
-            session.doc_resolved = doc_resolved
-            session.engine = qe
-            reply = transcript.strip() or "（无输出）"
+            ):
+                session.agent = agent
+                session.doc_resolved = doc_resolved
+                session.engine = qe
+                yield _chat_history_append(history, text, reply), session, ""
         except Exception as exc:
-            reply = f"执行出错：{exc}"
-
-        return _chat_history_append(history, text, reply), session, ""
+            yield (
+                _chat_history_append(history, text, f"执行出错：{exc}"),
+                session,
+                "",
+            )
 
     with gr.Blocks(title="Topic4 C3/C4 客户端") as demo:
         gr.Markdown(
@@ -748,12 +878,12 @@ def launch_c34_gradio_client(
             outputs=[session_state, start_msg, chat],
         )
         send_btn.click(
-            _chat,
+            _chat_stream,
             inputs=[msg_in, chat, session_state],
             outputs=[chat, session_state, msg_in],
         ).then(lambda: "", outputs=msg_in)
         msg_in.submit(
-            _chat,
+            _chat_stream,
             inputs=[msg_in, chat, session_state],
             outputs=[chat, session_state, msg_in],
         ).then(lambda: "", outputs=msg_in)

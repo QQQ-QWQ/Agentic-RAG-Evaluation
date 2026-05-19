@@ -108,6 +108,12 @@ def _import_c2():
     return run_c2_retrieval_ablation
 
 
+def _import_c34_batch():
+    import run_c34_batch_eval
+
+    return run_c34_batch_eval
+
+
 def _import_score_single():
     import run_score_answer_accuracy
 
@@ -126,6 +132,10 @@ def cmd_experiment_batch(args: argparse.Namespace) -> None:
 
 def cmd_experiment_c2(args: argparse.Namespace) -> None:
     _import_c2().run_c2_ablation_from_args(args)
+
+
+def cmd_experiment_c34(args: argparse.Namespace) -> None:
+    raise SystemExit(_import_c34_batch().main_from_args(args))
 
 
 def cmd_score_answers(args: argparse.Namespace) -> None:
@@ -332,6 +342,12 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[_import_c2().build_c2_ablation_parser(add_help=False)],
         help="C2 三阶段检索消融",
     ).set_defaults(func=cmd_experiment_c2)
+
+    exp_sub.add_parser(
+        "c34",
+        parents=[_import_c34_batch().build_c34_batch_parser(add_help=False)],
+        help="C3/C4 批量（与 client 共用 QueryEngine）",
+    ).set_defaults(func=cmd_experiment_c34)
 
     score = sub.add_parser("score", help="答案评判与 C2 汇总")
     score_sub = score.add_subparsers(dest="score_cmd", metavar="SUB", required=True)

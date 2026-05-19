@@ -1607,3 +1607,98 @@ question_id,answer_correctness,citation_accuracy,planning_quality,retrieval_suff
 ```text
 docs/c3_smoke_experiment_guide.md
 ```
+
+## 2026-05-19 C4 专用工具、C3/C4 批量与 Gradio 流式（工程增补）
+
+记录人：李金航
+
+阶段：C4 工具对齐开题 + C3/C4 可复现批量 + Demo 体验。
+
+对应任务：开题「四类外部工具」、C3 smoke 批量、客户端可观测性；**不要求远端沙箱**（采用本地子进程沙箱）。
+
+### 已完成（代码与文档）
+
+1. **C4 专用工具**（与 `data/testset/questions.csv` 中 `required_tool` 对齐）  
+   - `src/agentic_rag/tools/calculator_tool.py` → Agent 工具 `topic4_calculator`  
+   - `src/agentic_rag/tools/table_analyzer_tool.py` → `topic4_table_analyzer`（pandas；兼容带 Markdown 前言的 CSV）  
+   - `src/agentic_rag/tools/code_runner_tool.py` → `topic4_code_runner`（底层 `sandbox/local_subprocess.py`）  
+   - 注册于 `deep_planning/tools_factory.py`；C4 且 `SANDBOX_ENABLED=true` 时另保留 `sandbox_exec_python` 兼容名  
+
+2. **C3/C4 批量评测**（与 `main.py client` **同一套** `QueryEngine` + 编排链，非旁路脚本）  
+   - `src/agentic_rag/experiment/c34_batch.py`  
+   - 根目录 `run_c34_batch_eval.py`；亦可 `uv run python main.py experiment c34 ...`  
+   - 预设拆分：`c3_smoke`（Q021–Q030）、`c4_tools`（Q013,Q016–Q019）、`main_20`、`ids`  
+   - 日志：`runs/logs/c3_agentic_retrieval_batch/`、`runs/logs/c4_tool_augmented_batch/`  
+
+3. **Gradio 流式展示**  
+   - `cli/c34_client.py`：`iter_c34_turn_stream`、`_chat_stream`；编排事件经 `telemetry/streaming_hooks.py` 推送  
+
+4. **缺陷修复**  
+   - `orchestration/loop.py`：删除重复的 `enable_c4_tools=` 实参（曾导致 SyntaxError）  
+
+5. **单测**  
+   - `tests/test_c4_computation_tools.py`（5 passed）  
+
+6. **文档同步**  
+   - 根目录 `README.md` §12 进度与打开方式  
+   - `docs/ARCHITECTURE.md` §5、工具表、C3/C4 流程图  
+   - 本条目  
+
+### 关键命令
+
+```powershell
+# 环境
+uv sync --group agent
+# .env: DEEPSEEK_API_KEY, ARK_API_KEY；C4 代码题建议 SANDBOX_ENABLED=true
+
+# 打开 Demo
+uv run python main.py kb sync
+uv run python main.py client --c4 --sandbox
+
+# C3 smoke 批量
+uv run python run_c34_batch_eval.py --tier c3 --split c3_smoke --verbose-events
+
+# C4 工具向题批量
+uv run python run_c34_batch_eval.py --tier c4 --split c4_tools --sandbox
+
+# 单测
+uv run pytest tests/test_c4_computation_tools.py -q
+```
+
+### 输出文件（批量跑完后）
+
+```text
+runs/logs/c3_agentic_retrieval_batch/run_logs.jsonl
+runs/logs/c3_agentic_retrieval_batch/batch_report.json
+runs/logs/c4_tool_augmented_batch/run_logs.jsonl
+runs/logs/c4_tool_augmented_batch/batch_report.json
+```
+
+每行 JSONL 含：`question_id`、`events[]`（L1/L2/L3 摘要）、`session_id`、`latency_ms`。
+
+### 设计说明（答辩可用）
+
+| 开题名称 | 实现 | 说明 |
+| --- | --- | --- |
+| file_reader | `topic4_file_read` | 根内 MarkItDown，根外 `parse_path` |
+| calculator | `topic4_calculator` | AST 安全算术，非 LLM 心算 |
+| table_analyzer | `topic4_table_analyzer` | pandas 统计；**不是** MarkItDown |
+| code_runner | `topic4_code_runner` | 本地临时目录子进程；**非** Modal 远端沙箱 |
+
+Deep Agents 参考：[Overview](https://docs.langchain.com/oss/python/deepagents/overview) — 本项目 L2 已用 `create_deep_agent`；内置 `write_todos`/虚拟 FS 由 harness 提供；**执行隔离**采用自研轻量沙箱以满足课程可复现要求。
+
+### 主要结果
+
+- 工具层单测通过；**全量 C3/C4 批量实验与人评尚未在本日跑完**（需组员执行上述命令并填 `manual_eval_*.csv`）。
+
+### 遇到问题
+
+- `rag_eval_results.csv` 含 Markdown 前言，直接 `read_csv` 会失败 → 已在 `table_analyzer` 中跳过前言行。  
+- Windows 控制台编码可能导致 Agent 输出乱码 → 批量建议 `$env:PYTHONUTF8=1`。
+
+### 下一步
+
+1. 跑满 `c3_smoke` / `c4_tools` 批量并人工抽检。  
+2. 题集扩至 40–50 题。  
+3. 补 C4 消融配置与 Benchmark/C5 样例。  
+4. 整理 10+ 失败案例写入计划中的 `failure_cases.md`。

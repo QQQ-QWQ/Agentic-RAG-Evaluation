@@ -243,6 +243,84 @@ def _build_c4_file_tools(*, enable_c4_tools: bool) -> list[Any]:
     return [topic4_file_read, topic4_file_ingest]
 
 
+def _build_c4_computation_tools(
+    *,
+    enable_c4_tools: bool,
+    sandbox_workspace: Path | None,
+) -> list[Any]:
+    """C4 开题四工具中的 calculator / table_analyzer / code_runner（+ 兼容 sandbox_exec_python）。"""
+    if not enable_c4_tools:
+        return []
+
+    from agentic_rag.tools.calculator_tool import format_calculator_response, safe_calculate
+    from agentic_rag.tools.table_analyzer_tool import analyze_table, format_table_analyzer_response
+
+    @tool
+    def topic4_calculator(expression: str) -> str:
+        """【C4 · 计算器】安全算术：+ - * / // % ** 与括号；用于比例、均值、差值（如 Q016/Q019）。
+
+        示例：``(0.72 + 0.81) / 2``。CSV 列聚合请用 topic4_table_analyzer。
+        """
+        return format_calculator_response(safe_calculate(expression))
+
+    @tool
+    def topic4_table_analyzer(
+        file_path: str,
+        operation: str = "preview",
+        column: str = "",
+        group_by: str = "",
+        top_n: int = 20,
+    ) -> str:
+        """【C4 · 表格分析】对工程内 .csv/.tsv 做 preview / value_counts / groupby_count / column_mean。
+
+        Q013 若源为 Markdown 列表，可先 topic4_file_read 再归纳；纯 CSV 统计用本工具。
+        """
+        try:
+            payload = analyze_table(
+                file_path,
+                operation=operation,  # type: ignore[arg-type]
+                column=column,
+                group_by=group_by,
+                top_n=top_n,
+            )
+        except Exception as exc:
+            payload = {"ok": False, "error": str(exc)}
+        return format_table_analyzer_response(payload)
+
+    tools: list[Any] = [topic4_calculator, topic4_table_analyzer]
+
+    if sandbox_workspace is not None and app_config.SANDBOX_ENABLED:
+        from agentic_rag.tools.code_runner_tool import format_code_runner_response, run_code_in_sandbox
+
+        ws = Path(sandbox_workspace).resolve()
+
+        @tool
+        def topic4_code_runner(
+            code: str,
+            read_only_paths: str = "",
+        ) -> str:
+            """【C4 · 代码执行】在会话沙箱目录运行 Python（Q017/Q018 读 .py、验证片段）。
+
+            read_only_paths：逗号分隔的工程内文件路径，会复制到沙箱 data/ 下只读使用。
+            需 SANDBOX_ENABLED=true。
+            """
+            paths = [p.strip() for p in (read_only_paths or "").split(",") if p.strip()]
+            try:
+                payload = run_code_in_sandbox(
+                    code,
+                    ws,
+                    read_only_paths=paths or None,
+                )
+            except Exception as exc:
+                payload = {"ok": False, "error": str(exc)}
+            return format_code_runner_response(payload)
+
+        tools.append(topic4_code_runner)
+        tools.append(_sandbox_python_tool(ws))
+
+    return tools
+
+
 def build_topic4_rag_tools(
     doc_path: str | Path | None = None,
     *,
@@ -333,9 +411,11 @@ def build_topic4_rag_tools(
         topic4_rag_query,
         *_build_firecrawl_tools(enable_c4_tools=enable_c4_tools),
         *_build_c4_file_tools(enable_c4_tools=enable_c4_tools),
+        *_build_c4_computation_tools(
+            enable_c4_tools=enable_c4_tools,
+            sandbox_workspace=sandbox_workspace,
+        ),
     ]
-    if enable_c4_tools and sandbox_workspace is not None and app_config.SANDBOX_ENABLED:
-        tools.append(_sandbox_python_tool(sandbox_workspace))
 
     from agentic_rag.telemetry.tool_audit import wrap_tools_with_audit
 

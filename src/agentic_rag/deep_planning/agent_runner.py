@@ -62,7 +62,9 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 - topic4_file_ingest：把本地文件纳入全库（盘外会复制到 data/raw/user_docs/）并重建索引。
 - topic4_firecrawl_scrape / topic4_firecrawl_search（需 FIRECRAWL_API_KEY）：抓取 http(s) 或搜索网页；**不能读本地文件**。
 - topic4_firecrawl_scrape_to_kb：抓取网页并写入知识库（重建索引）。
-- sandbox_exec_python（若已启用）：隔离目录执行 Python，验证代码。
+- topic4_calculator：安全算术（均值、差值、比例）；用于 calculation 类题。
+- topic4_table_analyzer：CSV/TSV 统计（preview、value_counts、groupby_count、column_mean）。
+- topic4_code_runner / sandbox_exec_python（若已启用）：会话沙箱内执行 Python；读工程内 .py/.csv 可用 read_only_paths 挂载副本。
 
 系统会在消息中预解析用户原文里的链接与本地路径；优先按【系统解析到的链接】调用 firecrawl_scrape。
 
@@ -71,7 +73,7 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 2. 检索可先轻后重（如 c0_naive → c2_stage3_context），并在最终答复说明使用的管线。
 3. 禁止编造工具未返回的引用或片段。
 4. 最终中文答复简洁可读。
-5. 验证代码优先 sandbox_exec_python；勿在主机任意执行未授权 shell。
+5. 数值题优先 topic4_calculator 或 topic4_table_analyzer；读代码/跑片段用 topic4_code_runner；勿在主机任意执行未授权 shell。
 """
 
 DEFAULT_AGENT_SYSTEM_PROMPT_C3 = """\

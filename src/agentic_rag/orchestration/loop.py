@@ -374,7 +374,6 @@ def _orchestrate_until_stable(
                 sandbox_workspace=sandbox_ws,
                 enable_c4_tools=cfg.enable_c4_tools,
                 additional_tools=extra_agent_tools if extra_agent_tools else None,
-                enable_c4_tools=cfg.enable_c4_tools,
             )
 
         exec_addon = accumulated_context if orch_round > 1 else None

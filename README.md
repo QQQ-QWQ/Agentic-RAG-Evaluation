@@ -488,16 +488,71 @@ Final Score =
 
 ## 十二、仓库开发与实验
 
+### 12.1 环境准备
+
+复制 `.env.example` 为 `.env` 并填写：
+
 ```text
 ARK_API_KEY=your_key_here
 DEEPSEEK_API_KEY=your_key_here
 ```
 
-注意：
+可选（C4 网页 / 沙箱）：
 
-- `.env` 不能提交到 GitHub。
-- 不要把 API Key 写进 Markdown、CSV、日志截图或聊天记录。
-- 所有脚本尽量使用 `uv run python ...` 运行。
+```text
+FIRECRAWL_API_KEY=...
+SANDBOX_ENABLED=true
+SANDBOX_TIMEOUT_SEC=60
+```
+
+注意：`.env` 勿提交 GitHub；命令统一使用 `uv run python ...`。
+
+```powershell
+cd E:\Agentic-RAG-Evaluation-1
+uv sync
+uv sync --group agent    # C3/C4、MarkItDown、deepagents
+uv run python main.py kb sync   # 首次或 raw 变更后重建全库 Chroma
+```
+
+### 12.2 课题进度总览（截至 2026-05-19）
+
+| 模块 | 状态 | 说明 |
+| --- | --- | --- |
+| 知识库 + Chroma 全库 | ✅ | `documents.csv` + `kb sync` |
+| C0 / C1 批量（20 题） | ✅ | `experiment batch`，见 `runs/results/c0_*`、`c1_*` |
+| C2 检索消融（三阶段） | ✅ | `experiment c2`，见 `runs/results/c2_*` |
+| C3 三层编排 + 客户端 | ✅ | `main.py client --c3`；smoke 题 Q021–Q030 |
+| C4 工具 + 本地沙箱 | ✅ | 读文件 / Firecrawl / calculator / table_analyzer / code_runner |
+| C3/C4 批量评测脚本 | ✅ | `run_c34_batch_eval.py`（与 client 共用 QueryEngine） |
+| Gradio 编排过程流式展示 | ✅ | `client` 发送后可见 L1/L2/L3 进度 |
+| 题集 40–50 题 | ⏳ | 现主集 20 + C3 候选 10 |
+| C3/C4 全量指标 + 人评 | ⏳ | 需跑批量并填 `manual_eval_*.csv` |
+| C4 消融（no-rewrite 等） | ⏳ | 配置与脚本待补 |
+| Benchmark 子集 + C5 对比 | ❌ | 未开始 |
+
+**沙箱说明**：课题要求「受限 Python 执行」，当前为**会话临时目录 + 子进程**（`topic4_code_runner`），**不强制**远端 Modal/E2B 沙箱；答辩中说明隔离边界即可。
+
+更细的模块边界见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 第 5 节；实验过程见 [docs/experiment_notes.md](docs/experiment_notes.md)。
+
+### 12.3 怎么打开（推荐顺序）
+
+| 你想做什么 | 命令 |
+| --- | --- |
+| **集成工作台**（菜单选功能） | `uv run python main.py` |
+| **C3/C4 网页 Demo**（默认） | `uv run python main.py client` |
+| **C3 仅检索** | `uv run python main.py client --c3` |
+| **C4 工具 + 沙箱** | `uv run python main.py client --c4 --sandbox` |
+| **终端多行对话** | `uv run python main.py client --console --c4` |
+| **全库 + 附加 PDF 组合检索** | `… client --c4 --retrieval-mode full_kb_and_ephemeral D:\path\file.pdf` |
+| **恢复某次会话** | `… client --c4 --resume-session <审计id>` |
+| **查看日志 / 复制继续命令** | `uv run python main.py logs` |
+| **C0/C1 批量** | `uv run python main.py experiment batch` |
+| **C2 消融** | `uv run python main.py experiment c2 --phase all --limit 20` |
+| **C3 smoke 批量（Q021–030）** | `uv run python run_c34_batch_eval.py --tier c3 --split c3_smoke` |
+| **C4 工具题批量（Q013,Q016–019）** | `uv run python run_c34_batch_eval.py --tier c4 --split c4_tools --sandbox` |
+| **Agent 编排 CLI**（同 client 链路） | `uv run python main.py agent --c4 --planning-rewrite` |
+
+浏览器客户端：执行 `client` 后选 **C3/C4** → **开始会话** → 输入问题；编排过程中聊天框会**流式刷新**规划/执行/研判摘要。
 
 ## 产品入口（C3/C4 与检索范围）
 
@@ -512,9 +567,10 @@ DEEPSEEK_API_KEY=your_key_here
 | 仅附加 | `… --retrieval-mode ephemeral_only <路径>` | 不查全库 |
 | 仅全库 | 附加路径留空，或 `--retrieval-mode full_kb` | 与批量实验同一索引 |
 | Agent CLI | `uv run python main.py agent --c4` | 与 client 同编排；检索范围由是否绑定文档/临时索引决定 |
+| C3/C4 批量 | `uv run python run_c34_batch_eval.py` 或 `main.py experiment c34` | 与 client 共用 `QueryEngine`，日志在 `runs/logs/*_batch/` |
 | 知识库维护 | `uv run python main.py kb sync` / `kb reset` | 重建系统全库向量 |
 
-依赖：C3/C4 需 `uv sync --group agent`；`.env` 配置 `DEEPSEEK_API_KEY`、`ARK_API_KEY`（C4 网页抓取另需 `FIRECRAWL_API_KEY`）。
+依赖：C3/C4 需 `uv sync --group agent`；`.env` 配置 `DEEPSEEK_API_KEY`、`ARK_API_KEY`（C4 网页抓取另需 `FIRECRAWL_API_KEY`；代码题建议 `SANDBOX_ENABLED=true`）。
 
 架构说明见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 第 1.1 节与「检索范围」表。
 
@@ -588,31 +644,25 @@ runs/results/c2_ablation_report.md
 
 | 配置 | 名称 | 当前定位 |
 | --- | --- | --- |
-| C0 | Naive RAG | 普通 RAG baseline：文档解析、切块、embedding、Top-K 检索、答案生成。 |
-| C1 | Query Rewrite RAG | 在 C0 基础上新增 query rewrite，包括查询诊断、检索式改写、多候选 query 和保守改写判断。 |
-| C2 | Advanced RAG | 在 C1 基础上验证 hybrid retrieval、rerank、context expansion。 |
-| C3 | Agentic Retrieval RAG | 后续新增任务规划、多轮检索和 self-check，不包含外部工具。 |
-| C4 | Tool-Augmented Agentic RAG | 后续新增文件读取、代码执行、计算器、表格分析工具。 |
+| C0 | Naive RAG | 普通 RAG baseline：解析、切块、向量检索、生成。 |
+| C1 | Query Rewrite RAG | C0 + query rewrite（批量线 `experiment batch`）。 |
+| C2 | Advanced RAG | C1 + BM25 混合、rerank、邻接上下文（`experiment c2` 三阶段已跑通）。 |
+| C3 | Agentic Retrieval RAG | **在线**：L1 规划 → L2 Deep Agent（仅 `topic4_rag_query`）→ L3 研判；`client --c3` / `run_c34_batch_eval --split c3_smoke`。 |
+| C4 | Tool-Augmented Agentic RAG | **在线**：C3 + `topic4_file_*`、Firecrawl、`topic4_calculator`、`topic4_table_analyzer`、`topic4_code_runner`（本地沙箱）；`client --c4 --sandbox`。 |
 
-实验原则：每次只新增一类关键能力，避免变量混在一起导致结果无法解释。
+实验原则：离线 C0–C2 用 `RunProfile` 批量；C3/C4 用同一套 `QueryEngine` 做 Demo 与批量，避免两套逻辑分叉。
 
-## 下一步工作
+## 下一步工作（2026-05-19 更新）
 
 优先级从高到低：
 
-1. 唐宁建立 `data/testset/manual_eval_c2.csv`，对 C2 Stage1/Stage2/Stage3 分别评分 Answer Correctness 和 Citation Accuracy。
-2. 先完成 Stage2 的 20 题人工评分，再补 Q005、Q007、Q013、Q018 的三阶段横向案例分析。
-3. 赵启行汇总 C0/C1/C2 总表：文档命中、Gold chunk 命中、答案正确性、引用准确性、延迟、token。
-4. 李金航解释 C2 三阶段收益与成本，尤其是 rerank 提升和 context expansion 的边界。
-5. C2 人工验收后，再决定是否阶段性冻结 C2。
-6. C2 冻结后，再进入 C3：任务规划、多轮检索和 self-check。
-7. C3 稳定后，再进入 C4：文件读取、代码执行、计算器和表格分析工具调用。
+1. 跑通并归档 **C3 smoke**、**C4 工具题** 批量日志（`run_c34_batch_eval`），补 `manual_eval_c3_smoke.csv`。
+2. 题集扩至 **40–50** 题并冻结 `questions.csv` / `references.csv`。
+3. 汇总 C0–C2 人评与 C3/C4 样例，形成对比表（答案正确性、引用、延迟、工具调用）。
+4. 补 **C4 消融**（no-rewrite / no-self-check / no-tool）与 10+ 失败案例。
+5. （选做）Benchmark 参考子集 10 题、Dify/RAGFlow 各 5 题横向参考。
 
-建议分工：
-
-- 赵启行：统筹阶段冻结、检查结论表述、推进 C2 验收和最终报告逻辑。
-- 唐宁：复核 C0/C1 人工评分，补充 C2 人工评分，维护失败案例。
-- 李金航：解释 C2 三阶段收益与成本，维护 hybrid retrieval、rerank、context expansion 相关代码。
+文档索引：`docs/experiment_notes.md`（按日记录）· `docs/ARCHITECTURE.md`（结构与进度）· `docs/c3_smoke_experiment_guide.md`。
 
 ## 协作注意事项
 

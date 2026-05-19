@@ -37,6 +37,7 @@
 | `batch_experiment_guide.md` | 已建立 | 说明如何运行 C0/C1 批量实验、检查输出文件、解释初版结果和处理常见问题。 |
 | `c2_ablation_guide.md` | 已建立 | C2 检索消融（混合 / +重排 / +邻接上下文）脚本用法与输出说明。 |
 | `c3_smoke_experiment_guide.md` | 2026-05-18 | C3 小批量验证实验说明：Q021-Q030 运行方式、输出文件、结果摘要、人工复核要求。 |
+| （README §12 + ARCHITECTURE §5） | 2026-05-19 | 课题进度、打开方式、C4 工具与 C3/C4 批量；见 `experiment_notes.md` 2026-05-19。 |
 | `evaluation_ai_judge.md` | 已建立 | 独立 AI 评判（LLM-as-judge）模块定位、字段与与人评对齐说明。 |
 | `ARCHITECTURE.md` | 持续更新 | 包结构、模块职责、**`main.py client` / Runtime / 审计线**；§5 修订记录。 |
 | `agent_runtime_architecture.md` | 2026-05-17–18 | Agent Runtime 骨架、`QueryEngine` 与 C3/C4 客户端；C4 Firecrawl / `topic4_file_*` 完成度。 |
@@ -48,29 +49,20 @@
 
 ## 3. 当前工程进展记录
 
-截至当前阶段，项目已经完成：
+**打开方式与进度表**以根目录 [README.md](../README.md) **§12** 为准；架构细节见 [ARCHITECTURE.md](ARCHITECTURE.md) **§5**；按日实验见 [experiment_notes.md](experiment_notes.md)。
 
-- 项目目录、uv 环境和基础协作规范已经建立。
-- 迁移进来的代码已定位为 C0 Naive RAG / 单文档本地 RAG baseline，不是完整 Agentic RAG。
-- C0 已具备单文档解析、切块、embedding、内存向量 Top-K 检索和答案生成的基础链路。
-- C1 已开始实现 query rewrite，并新增了结构化接口、日志字段和基础测试。
-- 已建立一个最小样例文档：`data/raw/learning_docs/python_basic_sample.md`，用于验证单文档解析、切块和后续 C0/C1 小样例运行。
-- 已建立初版知识库登记表：`data/processed/documents.csv`，当前包含 23 条文档记录。
-- 已准备首批 20 条测试题：`data/testset/questions.csv` 和 `data/testset/references.csv`。
-- 已新增 C0/C1 批量实验入口：`run_batch_experiments.py`。
-- 已完成一次 C0/C1 20 题批量实验，生成 `runs/logs/c0_naive/run_logs.jsonl`、`runs/results/c0_results.csv`、`runs/logs/c1_rewrite/run_logs.jsonl` 和 `runs/results/c1_results.csv`。
+截至 **2026-05-19**，概要如下：
 
-当前尚未完成：
+| 档位 | 状态 |
+| --- | --- |
+| C0 / C1 批量 | ✅ 20 题 + `runs/results/c0_*`、`c1_*` |
+| C2 三阶段消融 | ✅ `runs/results/c2_*` |
+| C3 客户端 + smoke 批量入口 | ✅ `client --c3`；`run_c34_batch_eval --split c3_smoke` |
+| C4 四工具 + 本地沙箱 | ✅ calculator / table_analyzer / code_runner + file / Firecrawl |
+| Gradio 编排流式 | ✅ |
+| 题集 40–50、C4 消融、Benchmark、C5 | ⏳ / ❌ |
 
-- 持久化向量数据库尚未建立，当前批量实验仍以 `SimpleVectorIndex` 内存索引为主。
-- `references.csv` 中的 `evidence_chunk_id` 尚未补齐，正式 chunk 级指标还不能计算。
-- C0/C1 的人工答案质量评分、引用可信度评分和失败案例分析尚未完成。
-- C2 检索链路（BM25、混合检索、rerank、邻接上下文）已在代码中实现；**2026-05-06** 由李金航完成首轮 **C2 三阶段消融**跑通，记录见 `experiment_notes.md` 同日期条目，结果见 `runs/results/c2_*`。
-- **C3/C4 统一客户端**（`main.py client`）：2026-05-17 多文档入库、Runtime、`doc_id` 子集检索（`experiment_notes` / `ARCHITECTURE` §2.10–2.12）。
-- **2026-05-18**：C4 对称工具族 — Firecrawl 网页 + `topic4_file_read`/`topic4_file_ingest` 本地读盘与入库（第二层动态调用）；C3 仍仅检索工具。
-- C3 在客户端侧为「仅检索工具」的 Agent 编排；完整课题指标仍以批量实验与评测为准。
-- 仍待：Gradio 对话内附件上传、规划前改写 UI；计算器等扩展见 `experiment_notes` 待办。
-- 正式测试集、公共 Benchmark 参考子集和 Dify/RAGFlow 横向对比尚未开始。
+仍待：C3/C4 **全量批量跑完 + 人评**、题集扩充、失败案例库、结题报告图表。
 
 ## 4. 后续需要补充的文档
 

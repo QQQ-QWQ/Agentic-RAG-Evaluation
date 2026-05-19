@@ -33,6 +33,9 @@ _C4_EXTRA = frozenset(
         "topic4_firecrawl_scrape",
         "topic4_firecrawl_search",
         "topic4_firecrawl_scrape_to_kb",
+        "topic4_calculator",
+        "topic4_table_analyzer",
+        "topic4_code_runner",
         "sandbox_exec_python",
     }
 )
@@ -50,7 +53,10 @@ def get_all_base_tool_specs(*, enable_c4: bool) -> list[ToolSpec]:
             [
                 ToolSpec("topic4_file_read", "读取本地文件（MarkItDown / parse_path）"),
                 ToolSpec("topic4_file_ingest", "本地文件入库并重建 Chroma 索引"),
-                ToolSpec("sandbox_exec_python", "隔离目录执行 Python"),
+                ToolSpec("topic4_calculator", "安全算术表达式"),
+                ToolSpec("topic4_table_analyzer", "CSV/TSV 统计"),
+                ToolSpec("topic4_code_runner", "沙箱内 Python + 只读文件挂载"),
+                ToolSpec("sandbox_exec_python", "沙箱内 Python（兼容别名）"),
             ]
         )
         if firecrawl_configured():
