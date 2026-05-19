@@ -9,8 +9,11 @@ __pycache__/
 venv/
 env/
 
-# Environment variables
+# Environment variables（勿提交密钥；仅 .env.example 可入库）
 .env
+.env.local
+.env.*.local
+!.env.example
 
 # uv / build
 dist/
@@ -25,13 +28,20 @@ build/
 .DS_Store
 Thumbs.db
 
-# Project generated data
-runs/logs/*
-runs/results/*
-runs/figures/*
-data/processed/vector_index/*
+# Project generated data（实验日志、审计、会话 chat/trace — 勿 git add）
+runs/logs/
+runs/results/
+runs/figures/
+data/processed/vector_index/
 data/processed/*.pkl
 data/processed/.kb_embedding_cache.pkl
+# KB sync / 切块产物（本地可 `main.py kb sync` 再生）
+data/processed/chunks.jsonl
+data/processed/documents.csv
+# Agent 会话上传、用户文档、网页快照（运行时写入）
+data/raw/session_upload/
+data/raw/user_docs/
+data/raw/web_snapshots/
 archive/
 
 # Local-only guidance notes
