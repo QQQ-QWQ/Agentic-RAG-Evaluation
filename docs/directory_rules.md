@@ -1,47 +1,57 @@
 # 目录使用规范
 
-本文档说明项目目录应该如何使用。所有成员必须按统一目录放文件，避免后期出现数据、代码、日志和报告混在一起的问题。
+本文档说明仓库目录职责、哪些内容应提交、哪些内容只保留在本地，以及正式实验前需要冻结的内容。当前根目录 `README.md` 只保留开题报告正文；运行方式和当前进度见根目录 `current progress.md`。
 
----
+## 1. 一级目录与根文件
 
-## 一、一级目录说明
+| 路径 | 作用 | 是否提交 |
+| --- | --- | --- |
+| `README.md` | 开题报告正文与参考文献 | 提交 |
+| `current progress.md` | 当前进度、运行入口、下一步任务 | 提交 |
+| `main.py` | 统一 CLI 入口 | 提交 |
+| `run_batch_experiments.py` | C0/C1 批量实验入口 | 提交 |
+| `run_c2_retrieval_ablation.py` | C2 三阶段消融入口 | 提交 |
+| `run_c34_batch_eval.py` | C3/C4 批量评测入口 | 提交 |
+| `run_score_rag_multidim.py` | 多维 AI Judge 辅助评分入口 | 提交 |
+| `src/` | 项目核心代码 | 提交 |
+| `configs/` | C0-C4、消融和可选 C5 配置 | 提交 |
+| `prompts/` | Query rewrite、self-check、judge 等 Prompt | 提交，正式实验前冻结 |
+| `data/` | 原始资料、处理数据、测试集 | 部分提交 |
+| `docs/` | 规范、架构、实验记录、专题说明 | 提交 |
+| `tests/` | 单元测试 | 提交 |
+| `runs/` | 本地实验日志、结果表、图表 | 默认不提交 |
+| `archive/` | 本地备份、历史输出 | 不提交 |
+| `.env` | 本地密钥 | 不提交 |
+| `.venv/` | uv 虚拟环境 | 不提交 |
 
-| 目录 | 用途 | 是否提交 |
-| :--- | :--- | :--- |
-| `data/` | 原始资料、处理后数据、测试集 | 部分提交 |
-| `src/` | 项目代码 | 提交 |
-| `configs/` | C0-C4、消融和 C5 配置 | 提交 |
-| `prompts/` | Prompt 模板 | 提交 |
-| `runs/` | 实验日志、结果表、图表 | 重要结果可提交，临时结果不提交 |
-| `docs/` | 项目文档、实验记录、失败案例、答辩材料 | 提交 |
-| `.venv/` | 本地虚拟环境 | 不提交 |
+## 2. 代码结构
 
----
+核心代码位于 `src/agentic_rag/`：
 
-## 二、data 目录
+| 目录 | 作用 |
+| --- | --- |
+| `documents/` | 文档解析、会话文档、传入文件检查 |
+| `rag/` | 分块、内存向量索引、Chroma 持久化、上下文扩展 |
+| `pipelines/` | C0-C2 RAG 编排 |
+| `experiment/` | 批量实验、知识库同步、C3/C4 batch |
+| `deep_planning/` | L1 规划、L2 Deep Agent、工具注册 |
+| `orchestration/` | Agentic RAG 编排循环、L3 研判、重试/重规划 |
+| `tools/` | C4 外部工具：文件、计算、表格、代码、网页、shell |
+| `sandbox/` | 本地子进程沙箱与受限 shell |
+| `telemetry/` | 会话审计、trace、chat transcript |
+| `evaluation/` | 人工/AI Judge 辅助评分 |
+| `cli/` | `main.py` 子命令、C3/C4 Gradio/console 客户端 |
+| `runtime/` | `QueryEngine`、REPL、headless 运行骨架 |
 
-### 1. `data/raw/`
+新增功能时，优先放入对应包内，不要在根目录继续新增临时 demo 脚本。确实需要根入口时，应在 `main.py` 或现有 `run_*.py` 体系中接入。
 
-放原始资料，不随便改。详见 **`data/raw/README.md`**。
+## 3. data 目录
 
-**系统知识库**（`main.py kb sync` / `kb reset` 会扫描并写入 Chroma）：
+### 3.1 `data/raw/`
 
-- `tech_docs/`、`learning_docs/`、`lab_docs/`、`tables_csv/`、`code_snippets/`
+原始资料目录。详见 `data/raw/README.md`。
 
-**不会进入系统全库**（会话附加或历史目录）：
-
-- `session_upload/` — 客户端绑定后仅**临时索引**
-- `user_docs/` — 不再作为 sync 来源
-- `web_snapshots/` — Firecrawl 快照
-
-规则：
-
-1. 原始文件尽量保持原样。
-2. 不要在原始文件上直接修改。
-3. 文件名要能看懂，避免 `新建文档1.pdf`。
-4. 大体积无关文件不要放进项目。
-
-建议后续细分：
+系统知识库扫描范围主要包括：
 
 ```text
 data/raw/learning_docs/
@@ -49,230 +59,127 @@ data/raw/lab_docs/
 data/raw/tech_docs/
 data/raw/tables_csv/
 data/raw/code_snippets/
-data/raw/benchmark_subset/
-data/raw/web_snapshot_optional/
 ```
 
-### 2. `data/processed/`
+不建议作为系统全库来源的目录：
 
-放处理后的数据。
-
-包括：
-
-| 文件或目录 | 用途 |
-| :--- | :--- |
-| `documents.csv` | 文档清单，记录 doc_id、标题、路径、类型 |
-| `chunks.jsonl` | 文档切分后的 chunk |
-| `bm25_index.pkl` | BM25 索引，可重新生成 |
-| `vector_index/` | 向量索引，可重新生成 |
+```text
+data/raw/session_upload/    # 会话临时上传
+data/raw/user_docs/         # 历史用户文档
+data/raw/web_snapshots/     # Firecrawl 快照，可选
+```
 
 规则：
 
-1. `documents.csv` 和 `chunks.jsonl` 可以提交，因为它们是实验输入的一部分。
-2. 索引文件通常可以重新生成，体积大时不提交。
-3. 正式实验前要记录处理脚本和参数。
+1. 原始资料尽量保持原样。
+2. 文件名必须可读，不使用 `新建文档1.pdf` 一类名称。
+3. 与实验无关的大文件不放入仓库。
+4. 写入 `data/raw/` 后，需运行 `uv run python main.py kb sync` 才能进入系统全库索引。
 
-### 3. `data/testset/`
+### 3.2 `data/processed/`
 
-放测试题和参考答案，正式实验前冻结。
+处理后数据，如 `documents.csv`、`chunks.jsonl`、索引缓存等。当前工程中这些文件多为可再生结果，默认不应作为人工编辑对象。
 
-包括：
+规则：
 
-| 文件 | 用途 |
-| :--- | :--- |
-| `questions.csv` | 自建测试题 |
-| `references.csv` | 参考答案、证据和评分规则 |
-| `benchmark_questions.csv` | 公共 Benchmark 参考子集问题 |
-| `benchmark_references.csv` | Benchmark 参考答案和证据 |
-| `c5_reference_questions.csv` | Dify/RAGFlow 横向参考任务 |
+1. 优先通过 `main.py kb sync` 生成。
+2. 不手工改 `documents.csv` 和 `chunks.jsonl` 来“修结果”。
+3. 如果正式实验需要冻结 processed 数据，应在 `experiment_notes.md` 记录生成命令、Git commit 和参数。
+
+### 3.3 `data/testset/`
+
+测试集与参考答案目录。
+
+| 文件 | 作用 |
+| --- | --- |
+| `questions.csv` | Q001-Q020 主测试题 |
+| `references.csv` | 主测试题参考答案、gold doc/chunk |
+| `questions_c3_candidates.csv` | Q021-Q030 C3 候选题 |
+| `references_c3_candidates.csv` | C3 候选题参考证据 |
+| `manual_eval_c0_c1.csv` | C0/C1 人工评分 |
+| `manual_eval_c2.csv` | C2 人工评分 |
+
+后续建议新增：
+
+```text
+manual_eval_c3_smoke.csv
+manual_eval_c4_tools.csv
+benchmark_questions.csv
+benchmark_references.csv
+c5_reference_questions.csv
+```
 
 规则：
 
 1. 每道题必须有 `question_id`。
 2. 每道题必须能判断对错。
-3. 每道题要标注任务类型和所需工具。
-4. 正式实验前冻结，不能为了结果好看随便改。
+3. 工具型题必须标注 `required_tool`。
+4. 正式实验前冻结，不能为了结果好看改题或改参考答案。
 
----
+## 4. configs 与 prompts
 
-## 三、src 目录
-
-`src/` 放项目代码。
-
-建议模块：
-
-| 文件 | 作用 |
-| :--- | :--- |
-| `ingest.py` | 文档解析、清洗、切 chunk |
-| `retrieval.py` | 向量检索、BM25、混合检索 |
-| `rewrite.py` | query rewrite |
-| `rerank.py` | 证据重排 |
-| `tools.py` | 文件读取、代码执行、计算器、表格分析 |
-| `agent.py` | C3/C4 Agentic RAG 流程 |
-| `prompts.py` | 读取和管理 Prompt |
-| `evaluate.py` | 计算指标 |
-| `run_experiment.py` | 批量跑 C0-C4 |
-| （入口统一 `main.py`，勿再拆 Gradio 独立脚本） | 见 `src/agentic_rag/cli/demos.py` |
-| `utils.py` | 通用工具函数 |
-
-规则：
-
-1. 不要把 API Key 写进代码。
-2. 不要写死个人电脑路径。
-3. 尽量让脚本从项目根目录运行。
-4. 每个重要函数要有清晰输入和输出。
-
----
-
-## 四、configs 目录
-
-`configs/` 放实验配置。
-
-建议文件：
+`configs/` 控制实验档位和消融；`prompts/` 存 Prompt。正式实验前必须冻结：
 
 ```text
-c0_naive.yaml
-c1_rewrite.yaml
-c2_advanced.yaml
-c3_agentic_retrieval.yaml
-c4_tool_augmented.yaml
-c4_no_rewrite.yaml
-c4_no_self_check.yaml
-c4_no_tool.yaml
-c5_open_source_reference.yaml
-c4_adaptive_optional.yaml
+configs/
+prompts/
+模型名称
+测试集
+知识库版本
+Git commit 或 tag
 ```
 
-**档位（C0–C4）与源码归属、YAML 与 `RunProfile` 是否一致**：见 [experiment_stage_and_code_ownership.md](experiment_stage_and_code_ownership.md)。
+Prompt 修改会影响结果。每次大改 Prompt 或配置，都要记录到 `docs/experiment_notes.md`。
 
-规则：
+## 5. runs 与 archive
 
-1. 每个配置只控制一类实验能力。
-2. 不要在代码里临时改参数后忘记记录。
-3. 正式实验时配置文件要冻结。
+`runs/` 是本地实验输出目录。默认不提交 GitHub。
 
----
-
-## 五、prompts 目录
-
-`prompts/` 放 Prompt，不要全部写死在代码里。
-
-建议文件：
+常见输出：
 
 ```text
-query_rewrite_prompt.md
-task_planner_prompt.md
-answer_generation_prompt.md
-self_check_prompt.md
-tool_selection_prompt.md
-judge_prompt.md
+runs/logs/c0_naive/run_logs.jsonl
+runs/results/c0_results.csv
+runs/logs/c2_stage*_*/run_logs.jsonl
+runs/results/c2_ablation_summary.json
+runs/logs/c3_agentic_retrieval_batch/run_logs.jsonl
+runs/logs/c4_tool_augmented_batch/run_logs.jsonl
+runs/logs/audit/sessions/<id>/trace.jsonl
 ```
 
 规则：
 
-1. Prompt 修改会影响实验结果，所以正式实验前必须冻结。
-2. 每次大改 Prompt 要在实验记录中说明。
-3. 不同配置如果使用不同 Prompt，要明确记录。
+1. 临时日志和结果不提交。
+2. 如果需要给组员或老师查看，单独打包或摘要写入 docs。
+3. 正式图表和结论表应进入报告或 docs，而不是直接依赖本地 `runs/`。
+4. `archive/` 只作本地备份，不提交。
 
----
+## 6. docs 目录
 
-## 六、runs 目录
+`docs/` 按职责分组维护，入口见 `docs/README.md`。
 
-`runs/` 放实验输出。
+| 类别 | 主文档 |
+| --- | --- |
+| 文档导航 | `docs/README.md` |
+| 协作规范 | `environment_and_git_rules.md`、`collaboration_workflow.md`、`directory_rules.md` |
+| 架构说明 | `ARCHITECTURE.md`、`agent_runtime_architecture.md`、`c0_baseline_architecture.md` |
+| 实验指南 | `batch_experiment_guide.md`、`c2_ablation_guide.md`、`c3_smoke_experiment_guide.md` |
+| 评测规范 | `evaluation_plan.md`、`evaluation_ai_judge.md` |
+| 实验记录 | `experiment_notes.md` |
+| 阶段总结 | `manual_eval_c0_c1_summary.md`、`c2_three_layer_retrieval_report.md`、`failure_cases.md` |
 
-### 1. `runs/logs/`
+不要把同一个运行命令同时维护在多个文档里。当前运行入口以 `current progress.md` 为准。
 
-放每次运行的 JSONL 日志。
+## 7. 命名规范
 
-日志应该记录：
-
-- 原问题。
-- 改写问题。
-- 检索结果。
-- rerank 结果。
-- 工具调用。
-- 工具输出。
-- 最终答案。
-- 引用。
-- self-check。
-- 延迟和 Token。
-- 错误信息。
-
-### 2. `runs/results/`
-
-放统计后的结果表。
-
-建议文件：
-
-```text
-main_results.csv
-ablation_results.csv
-benchmark_results.csv
-c5_reference_results.csv
-error_cases.csv
-```
-
-### 3. `runs/figures/`
-
-放图表。
-
-建议图表：
-
-```text
-retrieval_quality.png
-answer_quality.png
-tool_success.png
-latency_cost.png
-```
-
-规则：
-
-1. 临时日志和临时图表不提交。
-2. 正式结果可以提交，但要说明来源。
-3. 结果文件不要覆盖，建议带日期或 run_id。
-
----
-
-## 七、docs 目录
-
-`docs/` 放项目文档。
-
-建议文件：
-
-| 文件 | 用途 |
-| :--- | :--- |
-| `README.md` | docs 入口 |
-| `environment_and_git_rules.md` | 环境和 Git 规范 |
-| `directory_rules.md` | 目录使用规范 |
-| `collaboration_workflow.md` | 三人分工与协作流程 |
-| `c0_baseline_architecture.md` | C0 本地 RAG baseline 架构说明 |
-| `experiment_notes.md` | 实验记录 |
-| `data_description.md` | 数据说明 |
-| `evaluation_plan.md` | 评测计划 |
-| `failure_cases.md` | 失败案例 |
-| `demo_script.md` | Demo 脚本 |
-| `final_report_outline.md` | 结题报告提纲 |
-| `slides_outline.md` | PPT 提纲 |
-
-规则：
-
-1. 文档不是最后才写，要边做边写。
-2. 实验结论必须能追溯到结果表和日志。
-3. 失败案例必须记录，不能只保留成功案例。
-
----
-
-## 八、命名规范
-
-### 1. 文件名
-
-推荐使用小写英文、下划线或短横线：
+推荐：
 
 ```text
 questions.csv
-main_results.csv
+main_results_20260520.csv
 c4_tool_augmented.yaml
 query_rewrite_prompt.md
+manual_eval_c3_smoke.csv
 ```
 
 不推荐：
@@ -283,9 +190,7 @@ query_rewrite_prompt.md
 结果！！！！.csv
 ```
 
-### 2. 编号
-
-建议：
+编号建议：
 
 ```text
 doc_001
@@ -294,29 +199,18 @@ Q001
 RUN_20260505_C0
 ```
 
-### 3. 结果文件
-
-正式实验结果建议带日期或 run_id：
-
-```text
-main_results_20260520.csv
-ablation_results_20260522.csv
-```
-
----
-
-## 九、冻结规范
+## 8. 冻结规范
 
 正式实验前必须冻结：
 
 | 内容 | 文件或目录 |
-| :--- | :--- |
-| 知识库 | `data/raw/`、`data/processed/documents.csv`、`chunks.jsonl` |
-| 测试集 | `data/testset/questions.csv`、`references.csv` |
+| --- | --- |
+| 知识库 | `data/raw/`、`data/processed/` 生成版本 |
+| 测试集 | `data/testset/questions.csv`、`references.csv` 和扩充题 |
 | Prompt | `prompts/` |
 | 配置 | `configs/` |
 | 代码 | Git commit 或 tag |
-| 模型 | `.env` 中模型名，或实验记录 |
-| 冻结快照存档（可选） | `frozen_experiment_versions/c0/`～`c4/`，按日期或 Git tag 再分子文件夹存放配置副本、manifest、结果摘要 |
+| 模型 | `.env` 中模型名或实验记录 |
+| 评测规则 | `docs/evaluation_plan.md` |
 
-冻结后可以修 bug，但不能为了提高结果随便改题、删题、改参考答案。
+冻结后可以修 bug，但不能为了提高结果随意改题、删题、改参考答案或换模型而不记录。

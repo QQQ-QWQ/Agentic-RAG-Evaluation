@@ -1,6 +1,6 @@
 # 项目架构与协作说明
 
-本文描述 **Agentic RAG** 的代码布局、数据流、模块职责与团队协作约定。使用方式与运行入口仍以根目录 [README.md](README.md) 为准。
+本文描述 **Agentic RAG** 的代码布局、数据流、模块职责与团队协作约定。开题报告正文见根目录 [README.md](../README.md)，当前运行入口、进度和下一步任务见根目录 [current progress.md](../current%20progress.md)。
 
 ---
 
@@ -37,7 +37,7 @@ flowchart LR
 | **`documents` / `ark` / `rag` / `llm`** | **领域能力**：解析、向量、索引、对话；**互不依赖** `pipelines`，便于单测与替换实现。 |
 | **`pipelines`** | **编排**：`build_vector_index`、`answer_with_index`、`local_rag_answer` 等，组合底层调用。 |
 | **`experiment`** | **运行快照**：`RunProfile`（开关组合）+ `run_document_rag`，把编排封装成**带参数的 JSON 友好出口**，供 CLI / 自动化使用。 |
-| **根目录 `main.py`** | **统一 CLI**：`hub`（工作台 **[5] 可启动 C3/C4**）、`chat`、`rag`、`agent`（多层级编排）、**`client`**（C3/C4 统一 Gradio/控制台，支持 **全库+附加融合检索**）、`kb sync|reset`（系统全库）、`experiment` / `score` / `demo` / `ui`、`session`（运行偏好 YAML）、**`runtime repl|headless`**；详见 README「产品入口」。`run_rag.py` 仅为 **`main.py rag` 的别名**。 |
+| **根目录 `main.py`** | **统一 CLI**：`hub`（工作台 **[5] 可启动 C3/C4**）、`chat`、`rag`、`agent`（多层级编排）、**`client`**（C3/C4 统一 Gradio/控制台，支持 **全库+附加融合检索**）、`kb sync|reset`（系统全库）、`experiment` / `score` / `demo` / `ui`、`session`（运行偏好 YAML）、**`runtime repl|headless`**；常用命令见根目录 `current progress.md`。`run_rag.py` 仅为 **`main.py rag` 的别名**。 |
 | **`src/agentic_rag/cli/`** | 子命令实现与演示函数（`app.py`、`c34_client.py`、`demos.py`）；**新增入口不要新建根目录 `*_demo.py`**，在本目录接线后挂到 `main.py`。 |
 | **`src/agentic_rag/runtime/`** | **Agent Runtime 骨架**：`QueryEngine` 包装既有编排；REPL/headless 与 `main.py client` 共用推理路径（见 `docs/agent_runtime_architecture.md`）。 |
 
@@ -319,11 +319,11 @@ flowchart TB
 ### 4.3 Git 与提交信息
 
 - 建议采用 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)：
-  - `feat:` 新功能  
-  - `fix:` 修复  
-  - `docs:` 文档（含 `README` / `ARCHITECTURE.md`）  
-  - `refactor:` 重构（行为不变）  
-  - `chore:` 构建、依赖、杂项  
+  - `feat:` 新功能
+  - `fix:` 修复
+  - `docs:` 文档（含 `README` / `ARCHITECTURE.md`）
+  - `refactor:` 重构（行为不变）
+  - `chore:` 构建、依赖、杂项
 - 示例：`feat(ark): support optional embedding batch size`
 
 ### 4.4 代码与评审
@@ -334,7 +334,8 @@ flowchart TB
 
 ### 4.5 文档分工
 
-- **README.md**：面向使用者的安装、配置、运行命令与简要说明。
+- **README.md**：开题报告正文与参考文献。
+- **current progress.md**：面向使用者的安装、配置、运行命令、当前进度与下一步任务。
 - **ARCHITECTURE.md**：面向贡献者的结构、模块边界与协作约定（本文）。
 
 ---

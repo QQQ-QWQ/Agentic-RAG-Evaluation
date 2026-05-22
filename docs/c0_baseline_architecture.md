@@ -1,6 +1,6 @@
 # C0 本地 RAG 基线代码架构说明
 
-本文描述 **Topic4 Agentic RAG Evaluation** 仓库在整合后的代码布局、数据流、模块职责与协作约定。运行方式仍以根目录 [README.md](README.md) 为准。
+本文描述 **Topic4 Agentic RAG Evaluation** 仓库在整合后的 C0 baseline 代码布局、数据流、模块职责与协作约定。当前项目运行方式与最新进度以根目录 [current progress.md](../current%20progress.md) 为准。
 
 **代码性质：** 当前可运行主体是从 `Agentic-RAG-110` 迁入并置于本仓库框架内的 **C0 Naive RAG / 单文档本地 RAG 基线**，已在 **`experiment` + `main.py rag`** 上接通 **C1 query rewrite** 与 **稠密+BM25 混合检索**（可用开关关闭）；rerank、多轮检索、任务规划、外部工具、self-check、批量评测流水线等仍属扩展阶段。后续 C1–C4 在同一仓库迭代，`configs/`、`runs/`、`prompts/` 与 `src/agentic_rag/` 协同演进。
 
@@ -179,11 +179,11 @@ flowchart LR
 ### 6.3 Git 与提交信息
 
 - 建议采用 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)：
-  - `feat:` 新功能  
-  - `fix:` 修复  
-  - `docs:` 文档（含 `README` / `docs/c0_baseline_architecture.md`）  
-  - `refactor:` 重构（行为不变）  
-  - `chore:` 构建、依赖、杂项  
+  - `feat:` 新功能
+  - `fix:` 修复
+  - `docs:` 文档（含 `README` / `docs/c0_baseline_architecture.md`）
+  - `refactor:` 重构（行为不变）
+  - `chore:` 构建、依赖、杂项
 - 示例：`feat(ark): support optional embedding batch size`
 
 ### 6.4 代码与文档同步
@@ -194,7 +194,8 @@ flowchart LR
 
 ### 6.5 文档分工
 
-- **README.md**：课题定位、安装配置、运行命令与简要说明。
+- **README.md**：开题报告正文与参考文献。
+- **current progress.md**：当前安装配置、运行命令、实验进度与下一步任务。
 - **docs/c0_baseline_architecture.md**：面向贡献者的结构、公共 API、模块边界与协作约定（本文）。
 - **`docs/`** 其余文档：分工流程、目录规则、实验笔记等。
 

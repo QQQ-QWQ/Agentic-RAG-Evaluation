@@ -1,111 +1,94 @@
 # docs 目录说明
 
-本目录用于保存项目协作规范、工程接口、实验记录、数据说明、评测计划和后续答辩材料。所有成员在写代码、整理数据、跑实验之前，都应先阅读这里的规范文档。
+本目录保存项目长期有效的工程规范、架构说明、实验指南、评测规则和实验记录。根目录 `README.md` 只保留开题报告正文与参考文献；当前进度、运行入口和下一步任务统一维护在根目录 `current progress.md`。
 
-当前原则是：重要规则写进文档，不只在群聊里口头说明；实验结论必须能追溯到数据、日志、结果表或失败案例。
+## 1. 文档职责边界
 
-## 1. README 文件如何区分
-
-项目里会出现多个 README，它们的作用不同：
-
-| 文件位置 | 作用 |
+| 文件 | 职责 |
 | --- | --- |
-| `README.md` | 项目总入口，说明项目定位、运行方式和当前代码状态。 |
-| `docs/README.md` | 文档目录导航，说明 docs 里每个文档负责什么。 |
-| `data/*/README.md` | 数据目录说明，只解释该数据目录应该放什么、不应该放什么。 |
-| `runs/*/README.md` | 实验输出目录说明，只解释日志、结果表、图表如何保存。 |
-| `prompts/README.md` | Prompt 目录说明，说明 Prompt 如何命名、冻结和记录版本。 |
+| `../README.md` | 开题报告正文与参考文献，不再维护运行命令和进度表 |
+| `../current progress.md` | 当前进度、运行入口、C0-C4 状态、下一步任务 |
+| `docs/README.md` | docs 文档索引和维护规则 |
+| `docs/experiment_notes.md` | 按时间记录实验过程、命令、输出、问题和阶段判断 |
+| `docs/ARCHITECTURE.md` | 当前工程总架构、模块职责、C3/C4 Runtime 与工具链路 |
 
-不要把所有内容都写进一个 README。项目总说明放根目录 README，协作和实验规范放 docs，数据说明放 data，实验输出说明放 runs。
+不要把同一类内容重复写在多个地方。运行命令优先更新 `current progress.md`；架构变更优先更新 `ARCHITECTURE.md`；实验过程优先更新 `experiment_notes.md`。
 
-### 技术说明（可选查阅）
+## 2. 当前主文档
 
-| 文档 | 作用 |
-| :--- | :--- |
-| `chroma_integration_and_langchain_reference.md` | Chroma 在本项目中的真实接入方式；与 LangChain 的关系及报告撰写注意事项 |
+### 协作与规范
 
-## 2. 当前必读文档
-
-| 文档 | 当前状态 | 作用 |
+| 文档 | 状态 | 说明 |
 | --- | --- | --- |
-| `environment_and_git_rules.md` | 已建立 | 说明 Python 版本、uv 使用、`.env`、`.env.example`、Git 分支、commit 和 PR 规范。 |
-| `directory_rules.md` | 已建立 | 说明项目目录如何使用，哪些文件可以提交，哪些文件不能提交。 |
-| `collaboration_workflow.md` | 已建立 | 统一说明三人分工、近期交付物、每日同步、每周验收、阶段验收和冲突处理。 |
-| `c0_baseline_architecture.md` | 已建立 | 说明迁移来的 C0 单文档本地 RAG baseline 的代码结构、数据流和模块边界。 |
-| `experiment_notes.md` | 已建立 | 记录每天实验过程、运行命令、结果文件、问题和解决办法。 |
-| `interface_and_logging_rules.md` | 已建立 | 固定 C0-C1 的输入输出结构、日志字段、C1 验收标准和测试办法。 |
-| `batch_experiment_guide.md` | 已建立 | 说明如何运行 C0/C1 批量实验、检查输出文件、解释初版结果和处理常见问题。 |
-| `c2_ablation_guide.md` | 已建立 | C2 检索消融（混合 / +重排 / +邻接上下文）脚本用法与输出说明。 |
-| `c3_smoke_experiment_guide.md` | 2026-05-18 | C3 小批量验证实验说明：Q021-Q030 运行方式、输出文件、结果摘要、人工复核要求。 |
-| （README §12 + ARCHITECTURE §5） | 2026-05-19 | 课题进度、C4 工具（含写盘/shell）、C3/C4 批量；见 `experiment_notes.md` 2026-05-19 各条目。 |
-| `evaluation_ai_judge.md` | 已更新 | 独立 AI 评判（LLM-as-judge）模块定位、多维评分字段、评分标准与人评对齐说明。 |
-| `ARCHITECTURE.md` | 持续更新 | 包结构、模块职责、**`main.py client` / Runtime / 审计线**；§5 修订记录。 |
-| `agent_runtime_architecture.md` | 2026-05-17–18 | Agent Runtime 骨架、`QueryEngine` 与 C3/C4 客户端；C4 Firecrawl / `topic4_file_*` 完成度。 |
-| `experiment_stage_and_code_ownership.md` | 持续 | C0–C4 YAML 与 A/B 线代码归属；§4.5 对齐 C4 Agent 工具表。 |
+| `environment_and_git_rules.md` | 维护中 | Python、uv、`.env`、Git 分支、commit、PR 规范 |
+| `collaboration_workflow.md` | 维护中 | 三人分工、协作节奏、验收方式；已合并原 `team_roles.md` |
+| `directory_rules.md` | 维护中 | 仓库目录、数据目录、runs 输出、冻结规范 |
+| `experiment_stage_and_code_ownership.md` | 维护中 | C0-C4 配置、源码归属和阶段边界 |
 
-说明：原 `team_roles.md` 的成员分工内容已经合并进 `collaboration_workflow.md`，后续不再单独维护 `team_roles.md`。
+### 架构与工程说明
 
-其中，`interface_and_logging_rules.md` 是当前 C1、C2 对齐接口时最重要的文档。即使 C0 后续继续整理，也应尽量保持其中约定的数据结构稳定。
+| 文档 | 状态 | 说明 |
+| --- | --- | --- |
+| `ARCHITECTURE.md` | 主文档 | 当前代码结构、C3/C4 Runtime、工具链路、日志审计 |
+| `agent_runtime_architecture.md` | 专题文档 | Agent Runtime、`QueryEngine`、headless / client 关系 |
+| `c0_baseline_architecture.md` | 历史/基线文档 | C0 单文档 RAG baseline 迁移与结构说明 |
+| `interface_and_logging_rules.md` | 维护中 | C0-C2 输入输出结构、日志字段、运行结果格式 |
 
-## 3. 当前工程进展记录
+### 实验运行指南
 
-**打开方式与进度表**以根目录 [README.md](../README.md) **§12** 为准；架构细节见 [ARCHITECTURE.md](ARCHITECTURE.md) **§5**；按日实验见 [experiment_notes.md](experiment_notes.md)。
+| 文档 | 状态 | 说明 |
+| --- | --- | --- |
+| `batch_experiment_guide.md` | 稳定 | C0/C1 批量实验运行和结果解释 |
+| `c2_ablation_guide.md` | 维护中 | C2 三阶段消融、Stage3 日志字段和运行说明 |
+| `c3_smoke_experiment_guide.md` | 维护中 | C3 Q021-Q030 smoke test、输出文件和人评要求 |
 
-截至 **2026-05-19**，概要如下：
+### 评测与结论材料
 
-| 档位 | 状态 |
+| 文档 | 状态 | 说明 |
+| --- | --- | --- |
+| `evaluation_plan.md` | 维护中 | 人工评分指标、判定规则、C3/C4 待补字段 |
+| `evaluation_ai_judge.md` | 维护中 | AI Judge / LLM-as-judge 的定位、多维评分字段和限制 |
+| `manual_eval_c0_c1_summary.md` | 阶段总结 | C0/C1 人工评分摘要 |
+| `c2_three_layer_retrieval_report.md` | 阶段总结 | C2 三阶段检索实验专题报告 |
+| `failure_cases.md` | 待扩充 | 失败案例库，后续至少整理 10 个典型案例 |
+
+## 3. 已合并或不再单独维护的内容
+
+| 内容 | 当前处理 |
 | --- | --- |
-| C0 / C1 批量 | ✅ 20 题 + `runs/results/c0_*`、`c1_*` |
-| C2 三阶段消融 | ✅ `runs/results/c2_*` |
-| C3 客户端 + smoke 批量入口 | ✅ `client --c3`；`run_c34_batch_eval --split c3_smoke` |
-| C4 四工具 + 本地沙箱 | ✅ calculator / table_analyzer / code_runner + file / Firecrawl |
-| Gradio 编排流式 | ✅ |
-| 题集 40–50、C4 消融、Benchmark、C5 | ⏳ / ❌ |
+| `team_roles.md` | 已合并到 `collaboration_workflow.md`，不再单独维护 |
+| 根目录 README 的运行入口和进度表 | 已移入 `current progress.md` |
+| C4 工具和 C3/C4 批量进度 | 以 `current progress.md` 和 `ARCHITECTURE.md` 为准 |
+| 每次实验临时输出 | 不写入 docs 索引，记录在 `experiment_notes.md`，原始文件留在本地 `runs/` |
 
-仍待：C3/C4 **全量批量跑完 + 人评**、题集扩充、失败案例库、结题报告图表。
+当前没有直接删除 docs 文件。若后续需要真正删除历史文档，应先由组长确认，再统一提交。
 
-## 4. 后续需要补充的文档
+## 4. 建议后续补充的文档
 
-这些文档可以等对应阶段开始后再建立，不需要现在一次性写完。
+这些文档只有在对应阶段真正开始时再建，不需要提前空转：
 
-| 文档 | 建议建立时间 | 作用 |
+| 文档 | 建议时机 | 作用 |
 | --- | --- | --- |
-| `project_plan.md` | C1 稳定后 | 细化 C0-C4 实验主线、阶段计划、每阶段验收标准。 |
-| `data_description.md` | 正式收集资料时 | 记录知识库材料来源、文档编号、chunk 编号规则、测试集字段和数据冻结版本。 |
-| `evaluation_plan.md` | C0/C1 首轮批量结果复核时 | 定义 Recall@5、MRR@10、Answer Correctness、Citation Accuracy、Tool Call Success、Latency 等指标。 |
-| `failure_cases.md` | 第一次批量实验后 | 记录失败案例、错误归因和后续修正方向，至少整理 10 个典型失败案例。 |
-| `demo_script.md` | Demo 前一周 | 记录现场演示问题、展示流程、备用问题和异常处理方案。 |
-| `final_report_outline.md` | 结题报告前 | 整理最终报告结构、实验结果表、图表和结论。 |
-| `slides_outline.md` | 答辩 PPT 前 | 整理答辩逻辑、每页 PPT 内容和成员讲解分工。 |
+| `data_description.md` | 测试集扩至 40-50 题时 | 记录知识库来源、doc_id、chunk_id、数据冻结版本 |
+| `demo_script.md` | Demo 前一周 | 记录现场演示脚本、备用问题和异常处理方案 |
+| `final_report_outline.md` | 结题报告前 | 整理最终报告结构、图表和结论 |
+| `slides_outline.md` | PPT 前 | 整理答辩页结构、成员讲解分工 |
 
-## 5. 当前阶段的重点文档任务
+## 5. 文档维护规则
 
-近期不需要继续堆文档，重点是让文档服务 C0-C1 实验。
+1. 与实验结论有关的内容必须能追溯到 `runs/` 输出、人工评分表或 `experiment_notes.md`。
+2. 与接口、日志、数据字段有关的修改，要同步更新对应实验指南。
+3. `current progress.md` 用于当前进度，不写成永久规范。
+4. `experiment_notes.md` 是过程记录，不替代最终报告。
+5. 不把 `.env`、API Key、个人路径、临时大文件或本地 `archive/` 内容写进文档。
 
-当前优先级：
+## 6. 组长检查清单
 
-1. 维护 `interface_and_logging_rules.md`，确保 C0、C1、后续 C2 都按同一输入输出结构写代码。
-2. 在 `experiment_notes.md` 记录每次运行命令、测试问题、日志路径和结果。
-3. 等正式知识库开始整理后，再建立 `data_description.md`。
-4. 当前已经跑完首轮 C0/C1 批量对比，下一步应补充 `evaluation_plan.md` 和失败案例记录。
+赵启行每次阶段推进前建议检查：
 
-## 6. 文档更新规范
-
-- 文档更新应尽量写清楚“为什么改”“改了什么”“影响谁”。
-- 与接口、日志、数据字段有关的修改，要优先通知所有成员。
-- 测试集、Prompt、配置文件和实验结果一旦冻结，必须在文档中记录冻结日期、文件路径和版本。
-- 不要把个人 API Key、`.env` 内容、临时日志、大体积索引文件写进文档或提交到仓库。
-- 成员个人临时任务说明可以先本地保存，只有需要团队长期参考时再纳入 docs。
-
-## 7. 组长检查清单
-
-赵启行作为组长，每次阶段推进前建议检查：
-
-- 三个人是否都能 `uv sync` 并正常运行项目。
-- 当前任务是否有明确输入、输出和验收标准。
-- C0、C1、C2 是否使用同一批知识库和同一批测试题。
-- 新增代码是否按 `interface_and_logging_rules.md` 输出日志。
-- 实验结果是否能从 `runs/logs/`、`runs/results/` 或 `docs/experiment_notes.md` 追溯。
-- 是否有成员在没有同步 main 的情况下单独推进大量修改。
-
-文档不是为了显得项目复杂，而是为了让三个人在 50 多天内少走弯路，能把实验、代码和报告稳定对齐。
+- 当前 main 是否与远端同步。
+- 三个人是否都能 `uv sync` / `uv sync --group agent`。
+- C3/C4 是否有 batch 日志、人工评分和失败案例。
+- 是否有成员把 `runs/`、`.env`、`archive/` 或无关大文件提交到仓库。
+- 新增功能是否更新了 `ARCHITECTURE.md` 或对应实验指南。
+- 当前结论是否区分“工程能跑”“自动指标较好”“人工评分可信”。
