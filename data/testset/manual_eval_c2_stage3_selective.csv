@@ -1,0 +1,21 @@
+question_id,config,answer_correctness,citation_accuracy,unsupported_refusal,main_problem,comment,reviewer,status
+Q001,c2_stage3_selective_context,1,1,no,none,"Covers indexing retrieval and generation with supporting LangChain chunks.",member_b,human_reviewed
+Q002,c2_stage3_selective_context,1,0.5,no,weak_citation,"Names and explains expected RAGAS metrics but citations mostly support metric names rather than full definitions.",member_b,human_reviewed
+Q003,c2_stage3_selective_context,1,1,no,none,"Explains LangGraph stateful workflow support and its relation to LangChain agents.",member_b,human_reviewed
+Q004,c2_stage3_selective_context,1,1,no,none,"Explains FAISS similarity search and its role as vector retrieval infrastructure for RAG.",member_b,human_reviewed
+Q005,c2_stage3_selective_context,1,1,no,none,"Correctly identifies Self-RAG and explains reflection tokens and adaptive retrieval.",member_b,human_reviewed
+Q006,c2_stage3_selective_context,1,1,no,none,"Covers reflection planning tool use multi-agent collaboration and dynamic retrieval workflow.",member_b,human_reviewed
+Q007,c2_stage3_selective_context,0.5,0.5,no,partial_answer,"Provides several relevant projects but misses Dify and CrewAI from the expected project set.",member_b,human_reviewed
+Q008,c2_stage3_selective_context,0.5,0.5,no,partial_answer,"Correctly avoids an absolute winner but only partially compares the expected methods and gives weak CRAG coverage.",member_b,human_reviewed
+Q009,c2_stage3_selective_context,1,0.5,no,weak_citation,"Forms a useful LangChain versus LlamaIndex design comparison but some cited chunks are broad or only partially supportive.",member_b,human_reviewed
+Q010,c2_stage3_selective_context,1,1,no,none,"Clearly distinguishes Self-RAG internal reflection from CRAG external retrieval evaluation and correction.",member_b,human_reviewed
+Q011,c2_stage3_selective_context,1,1,no,none,"Correctly contrasts Dify as a broader LLM app platform and RAGFlow as a RAG-focused engine.",member_b,human_reviewed
+Q012,c2_stage3_selective_context,0,0.5,yes,unsupported_refusal,"Only describes one survey classification and refuses the SoK comparison although the task is answerable from references.",member_b,human_reviewed
+Q013,c2_stage3_selective_context,0,0,yes,unsupported_refusal,"Refuses to classify the paper list and does not produce the required type distribution.",member_b,human_reviewed
+Q014,c2_stage3_selective_context,0.5,0.5,no,partial_answer,"Lists several broad RAG improvement directions but misses key expected methods such as Self-RAG A-RAG TeaRAG and KG-RAG.",member_b,human_reviewed
+Q015,c2_stage3_selective_context,1,0.5,no,weak_citation,"Correctly classifies the four projects but citations are only partially aligned with the expected evidence chunks.",member_b,human_reviewed
+Q016,c2_stage3_selective_context,1,1,no,none,"Computes both averages and the 0.1025 difference correctly from the metric table.",member_b,human_reviewed
+Q017,c2_stage3_selective_context,0.5,0.5,no,partial_answer,"Identifies arXiv API and Fetcher but misses urllib direct request as the third data acquisition method.",member_b,human_reviewed
+Q018,c2_stage3_selective_context,1,1,no,none,"Correctly identifies save_md parameters and the saved metadata fields.",member_b,human_reviewed
+Q019,c2_stage3_selective_context,1,1,no,none,"Correctly calculates the largest C0 to C2 metric improvement and cites the metric table.",member_b,human_reviewed
+Q020,c2_stage3_selective_context,1,0.5,no,weak_citation,"Correctly states evidence is insufficient for an all-task superiority claim but citations only partially support the boundary reasoning.",member_b,human_reviewed
