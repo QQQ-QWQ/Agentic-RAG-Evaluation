@@ -11,9 +11,14 @@ C3/C4 批量评测：与 ``main.py client`` / headless 共用 ``QueryEngine`` �
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
+import re
+import subprocess
+import sys
 import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -40,6 +45,7 @@ class C34BatchTask:
     question_id: str
     question: str
     task_type: str = ""
+    difficulty: str = ""
     expected_path: str = ""
     required_tool: str = ""
     note: str = ""
@@ -64,6 +70,9 @@ class C34BatchReport:
     schema_version: str = "topic4.c34_batch.v1"
     tier: str = "c3"
     split: str = ""
+    planning_rewrite_enabled: bool = False
+    result_csv: str = ""
+    run_environment: dict[str, Any] = field(default_factory=dict)
     tasks: list[C34BatchTaskResult] = field(default_factory=list)
 
 
@@ -84,6 +93,7 @@ def _read_questions_csv(path: Path) -> list[C34BatchTask]:
                     question_id=qid,
                     question=qtext,
                     task_type=(row.get("task_type") or "").strip(),
+                    difficulty=(row.get("difficulty") or "").strip(),
                     expected_path=(row.get("expected_path") or "").strip(),
                     required_tool=(row.get("required_tool") or "").strip(),
                     note=(row.get("note") or "").strip(),
@@ -135,12 +145,25 @@ def resolve_batch_tasks(
     return tasks
 
 
-def _orchestration_for_tier(tier: str, *, enable_sandbox: bool) -> OrchestrationConfig:
+def _orchestration_for_tier(
+    tier: str,
+    *,
+    enable_sandbox: bool,
+    enable_planning_rewrite: bool,
+    max_orchestration_rounds: int | None,
+    max_execute_retries_per_round: int | None,
+) -> OrchestrationConfig:
     enable_c4 = tier == "c4"
-    return OrchestrationConfig(
+    config = OrchestrationConfig(
         enable_c4_tools=enable_c4,
         enable_sandbox_tools=enable_c4 and enable_sandbox,
+        enable_planning_query_rewrite=enable_planning_rewrite,
     )
+    if max_orchestration_rounds is not None:
+        config.max_orchestration_rounds = max(1, int(max_orchestration_rounds))
+    if max_execute_retries_per_round is not None:
+        config.max_execute_retries_per_round = max(1, int(max_execute_retries_per_round))
+    return config
 
 
 def _default_log_dir(tier: str) -> Path:
@@ -154,6 +177,301 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+C34_RESULT_FIELDS = [
+    "question_id",
+    "question",
+    "task_type",
+    "difficulty",
+    "ok",
+    "error",
+    "stop_reason",
+    "latency_ms",
+    "planning_rewrite_enabled",
+    "plan_generated",
+    "needs_retrieval_tools",
+    "suggested_pipelines",
+    "rag_query_count",
+    "pipeline_mentions",
+    "retrieved_doc_ids",
+    "retrieved_chunk_ids",
+    "final_citation_chunk_ids",
+    "gold_doc_count",
+    "gold_doc_covered",
+    "gold_doc_coverage",
+    "gold_chunk_count",
+    "gold_chunk_covered",
+    "gold_chunk_coverage",
+    "answer",
+    "citations",
+    "log_path",
+]
+
+
+def _read_csv_dicts(path: Path) -> list[dict[str, str]]:
+    if not path.is_file():
+        return []
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        return [dict(row) for row in csv.DictReader(f)]
+
+
+def _reference_path_for_split(split: SplitName) -> Path:
+    testset = _project_root() / "data" / "testset"
+    if split == "c3_smoke":
+        return testset / "references_c3_candidates.csv"
+    return testset / "references.csv"
+
+
+def _read_references(split: SplitName) -> dict[str, dict[str, str]]:
+    if split == "ids":
+        refs: dict[str, dict[str, str]] = {}
+        testset = _project_root() / "data" / "testset"
+        for name in ("references.csv", "references_c3_candidates.csv"):
+            for row in _read_csv_dicts(testset / name):
+                qid = (row.get("question_id") or "").strip()
+                if qid:
+                    refs[qid] = row
+        return refs
+    return {
+        (row.get("question_id") or "").strip(): row
+        for row in _read_csv_dicts(_reference_path_for_split(split))
+        if (row.get("question_id") or "").strip()
+    }
+
+
+def _result_csv_path(tier: str, split: str) -> Path:
+    if tier == "c3" and split == "c3_smoke":
+        return _project_root() / "runs" / "results" / "c3_formal_results.csv"
+    return _project_root() / "runs" / "results" / f"{tier}_{split}_results.csv"
+
+
+def _write_result_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=C34_RESULT_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key, "") for key in C34_RESULT_FIELDS})
+
+
+def _sha256_file(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _git_commit() -> str:
+    try:
+        cp = subprocess.run(
+            ["git", "log", "-1", "--oneline"],
+            cwd=_project_root(),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError:
+        return ""
+    return (cp.stdout or "").strip()
+
+
+def _git_status_short() -> str:
+    try:
+        cp = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=_project_root(),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError:
+        return ""
+    return (cp.stdout or "").strip()
+
+
+def _run_environment() -> dict[str, Any]:
+    processed = _project_root() / "data" / "processed"
+    return {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "git_commit": _git_commit(),
+        "git_status_short": _git_status_short(),
+        "python_version": sys.version.split()[0],
+        "documents_csv_sha256": _sha256_file(processed / "documents.csv"),
+        "chunks_jsonl_sha256": _sha256_file(processed / "chunks.jsonl"),
+    }
+
+
+def _json_cell(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _split_ids(value: str) -> list[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return []
+    return [x.strip() for x in re.split(r"[,;，；]", raw) if x.strip()]
+
+
+def _unique(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
+
+
+def _chunk_ids_in_text(text: str) -> list[str]:
+    return _unique(re.findall(r"doc_\d+::chunk_\d+", text or ""))
+
+
+def _chunk_ids_from_citations(citations: list[Any]) -> list[str]:
+    ids: list[str] = []
+    for item in citations:
+        if isinstance(item, dict):
+            cid = str(item.get("chunk_id") or "").strip()
+            if cid:
+                ids.append(cid)
+        elif isinstance(item, str):
+            ids.extend(_chunk_ids_in_text(item))
+    return _unique(ids)
+
+
+def _extract_last_assistant_from_state(raw_state: dict[str, Any] | None) -> str:
+    if not raw_state:
+        return ""
+    last_state = raw_state.get("last_state")
+    if not isinstance(last_state, dict):
+        return ""
+    try:
+        from agentic_rag.orchestration.evidence_extract import extract_last_assistant_text
+
+        return extract_last_assistant_text(last_state.get("messages")).strip()
+    except Exception:
+        return ""
+
+
+def _load_trace_rows(session_id: str) -> list[dict[str, Any]]:
+    try:
+        from agentic_rag.telemetry.session_trace import load_session_trace
+
+        return load_session_trace(session_id)
+    except Exception:
+        return []
+
+
+def _trace_path(session_id: str) -> str:
+    try:
+        from agentic_rag.telemetry.session_trace import session_trace_path
+
+        return str(session_trace_path(session_id))
+    except Exception:
+        return ""
+
+
+def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    plan_payload: dict[str, Any] = {}
+    rag_events: list[dict[str, Any]] = []
+    for row in rows:
+        event = str(row.get("event") or "")
+        payload = row.get("payload")
+        if event == "layer1_plan" and isinstance(payload, dict) and not plan_payload:
+            plan_payload = payload
+        if event == "rag_query_result" and isinstance(payload, dict):
+            rag_events.append(payload)
+
+    pipelines: list[str] = []
+    doc_ids: list[str] = []
+    chunk_ids: list[str] = []
+    citations: list[Any] = []
+    for payload in rag_events:
+        pipeline = str(payload.get("pipeline") or "").strip()
+        if pipeline:
+            pipelines.append(pipeline)
+        for chunk in payload.get("retrieved_chunks") or []:
+            if not isinstance(chunk, dict):
+                continue
+            doc_id = str(chunk.get("doc_id") or "").strip()
+            chunk_id = str(chunk.get("chunk_id") or "").strip()
+            if doc_id:
+                doc_ids.append(doc_id)
+            if chunk_id:
+                chunk_ids.append(chunk_id)
+        raw_citations = payload.get("citations")
+        if isinstance(raw_citations, list):
+            citations.extend(raw_citations)
+
+    return {
+        "plan_generated": bool(plan_payload),
+        "needs_retrieval_tools": plan_payload.get("needs_retrieval_tools", ""),
+        "suggested_pipelines": _unique([str(x) for x in plan_payload.get("suggested_pipelines") or []]),
+        "rag_query_count": len(rag_events),
+        "pipeline_mentions": _unique(pipelines),
+        "retrieved_doc_ids": _unique(doc_ids),
+        "retrieved_chunk_ids": _unique(chunk_ids),
+        "citations": citations,
+    }
+
+
+def _formal_result_row(
+    *,
+    task: C34BatchTask,
+    row: C34BatchTaskResult,
+    reference: dict[str, str] | None,
+    planning_rewrite_enabled: bool,
+    answer: str,
+) -> dict[str, Any]:
+    trace = _summarize_trace(_load_trace_rows(row.session_id))
+    gold_doc_ids = _split_ids((reference or {}).get("evidence_doc_id", ""))
+    gold_chunk_ids = _split_ids((reference or {}).get("evidence_chunk_id", ""))
+    retrieved_doc_ids = trace["retrieved_doc_ids"]
+    retrieved_chunk_ids = trace["retrieved_chunk_ids"]
+    final_citation_chunk_ids = _chunk_ids_in_text(answer)
+    if not final_citation_chunk_ids:
+        final_citation_chunk_ids = _chunk_ids_from_citations(trace["citations"])
+
+    retrieved_doc_set = set(retrieved_doc_ids)
+    retrieved_chunk_set = set(retrieved_chunk_ids)
+    gold_doc_covered = sum(1 for doc_id in gold_doc_ids if doc_id in retrieved_doc_set)
+    gold_chunk_covered = sum(1 for chunk_id in gold_chunk_ids if chunk_id in retrieved_chunk_set)
+    gold_doc_count = len(gold_doc_ids)
+    gold_chunk_count = len(gold_chunk_ids)
+
+    return {
+        "question_id": task.question_id,
+        "question": task.question,
+        "task_type": task.task_type,
+        "difficulty": task.difficulty,
+        "ok": row.ok,
+        "error": row.error,
+        "stop_reason": row.stop_reason,
+        "latency_ms": row.latency_ms,
+        "planning_rewrite_enabled": planning_rewrite_enabled,
+        "plan_generated": trace["plan_generated"],
+        "needs_retrieval_tools": trace["needs_retrieval_tools"],
+        "suggested_pipelines": _json_cell(trace["suggested_pipelines"]),
+        "rag_query_count": trace["rag_query_count"],
+        "pipeline_mentions": _json_cell(trace["pipeline_mentions"]),
+        "retrieved_doc_ids": _json_cell(retrieved_doc_ids),
+        "retrieved_chunk_ids": _json_cell(retrieved_chunk_ids),
+        "final_citation_chunk_ids": _json_cell(final_citation_chunk_ids),
+        "gold_doc_count": gold_doc_count,
+        "gold_doc_covered": gold_doc_covered,
+        "gold_doc_coverage": round(gold_doc_covered / gold_doc_count, 4) if gold_doc_count else "",
+        "gold_chunk_count": gold_chunk_count,
+        "gold_chunk_covered": gold_chunk_covered,
+        "gold_chunk_coverage": round(gold_chunk_covered / gold_chunk_count, 4) if gold_chunk_count else "",
+        "answer": answer,
+        "citations": _json_cell(final_citation_chunk_ids or trace["citations"]),
+        "log_path": _trace_path(row.session_id),
+    }
+
+
 def run_c34_batch(
     *,
     tier: str = "c3",
@@ -162,6 +480,9 @@ def run_c34_batch(
     questions_csv: Path | None = None,
     limit: int | None = None,
     enable_sandbox: bool = False,
+    enable_planning_rewrite: bool = False,
+    max_orchestration_rounds: int | None = None,
+    max_execute_retries_per_round: int | None = None,
     log_dir: Path | None = None,
     continue_on_error: bool = True,
     stream_events_to_stdout: bool = False,
@@ -182,14 +503,29 @@ def run_c34_batch(
     if not tasks:
         raise SystemExit(f"未解析到题目（split={split}）")
 
-    orch = _orchestration_for_tier(tier, enable_sandbox=enable_sandbox)
+    references = _read_references(split)
+    orch = _orchestration_for_tier(
+        tier,
+        enable_sandbox=enable_sandbox,
+        enable_planning_rewrite=enable_planning_rewrite,
+        max_orchestration_rounds=max_orchestration_rounds,
+        max_execute_retries_per_round=max_execute_retries_per_round,
+    )
     out_dir = log_dir or _default_log_dir(tier)
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = out_dir / "run_logs.jsonl"
     report_path = out_dir / "batch_report.json"
+    result_csv_path = _result_csv_path(tier, split)
 
     batch_session = new_audit_session_id()
-    report = C34BatchReport(tier=tier, split=split)
+    report = C34BatchReport(
+        tier=tier,
+        split=split,
+        planning_rewrite_enabled=enable_planning_rewrite,
+        result_csv=str(result_csv_path),
+        run_environment=_run_environment(),
+    )
+    formal_rows: list[dict[str, Any]] = []
 
     audit_log(
         "c34_batch_start",
@@ -199,6 +535,10 @@ def run_c34_batch(
             "split": split,
             "task_count": len(tasks),
             "log_dir": str(out_dir),
+            "result_csv": str(result_csv_path),
+            "planning_rewrite_enabled": enable_planning_rewrite,
+            "max_orchestration_rounds": orch.max_orchestration_rounds,
+            "max_execute_retries_per_round": orch.max_execute_retries_per_round,
         },
     )
 
@@ -236,11 +576,17 @@ def run_c34_batch(
         try:
             result = engine.submit_message(task.question, on_event=on_event)
             latency = int((time.perf_counter() - t0) * 1000)
+            answer = (
+                _extract_last_assistant_from_state(result.raw_state)
+                or result.assistant_text
+                or result.transcript
+                or ""
+            )
             row = C34BatchTaskResult(
                 question_id=task.question_id,
                 question=task.question,
                 ok=result.stop_reason not in ("error", "aborted"),
-                answer=result.assistant_text or result.transcript or "",
+                answer=answer,
                 stop_reason=result.stop_reason,
                 latency_ms=latency,
                 tier=tier,
@@ -279,11 +625,25 @@ def run_c34_batch(
         log_row = {
             **asdict(row),
             "task_type": task.task_type,
+            "difficulty": task.difficulty,
             "expected_path": task.expected_path,
             "required_tool": task.required_tool,
             "note": task.note,
+            "planning_rewrite_enabled": enable_planning_rewrite,
+            "max_orchestration_rounds": orch.max_orchestration_rounds,
+            "max_execute_retries_per_round": orch.max_execute_retries_per_round,
         }
         _append_jsonl(jsonl_path, log_row)
+        formal_rows.append(
+            _formal_result_row(
+                task=task,
+                row=row,
+                reference=references.get(task.question_id),
+                planning_rewrite_enabled=enable_planning_rewrite,
+                answer=row.answer,
+            )
+        )
+        _write_result_csv(result_csv_path, formal_rows)
         print(
             f"[{tier}] {task.question_id} "
             f"{'OK' if row.ok else 'FAIL'} "
@@ -303,6 +663,10 @@ def run_c34_batch(
             "total": len(report.tasks),
             "report": str(report_path),
             "jsonl": str(jsonl_path),
+            "result_csv": str(result_csv_path),
+            "planning_rewrite_enabled": enable_planning_rewrite,
+            "max_orchestration_rounds": orch.max_orchestration_rounds,
+            "max_execute_retries_per_round": orch.max_execute_retries_per_round,
         },
     )
     return report

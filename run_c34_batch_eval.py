@@ -37,6 +37,23 @@ def build_c34_batch_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
         action="store_true",
         help="C4 时注册 sandbox_exec_python（需 SANDBOX_ENABLED=true）",
     )
+    parser.add_argument(
+        "--planning-rewrite",
+        action="store_true",
+        help="Enable C1 query rewrite before layer-1 planning.",
+    )
+    parser.add_argument(
+        "--max-orchestration-rounds",
+        type=int,
+        default=None,
+        help="Override C3/C4 outer planning-execution-judge rounds.",
+    )
+    parser.add_argument(
+        "--max-execute-retries-per-round",
+        type=int,
+        default=None,
+        help="Override layer-2 execute retries in each orchestration round.",
+    )
     parser.add_argument("--log-dir", type=Path, default=None)
     parser.add_argument(
         "--fail-fast",
@@ -67,6 +84,9 @@ def main_from_args(args: argparse.Namespace) -> int:
         questions_csv=args.questions_csv,
         limit=args.limit,
         enable_sandbox=args.sandbox,
+        enable_planning_rewrite=args.planning_rewrite,
+        max_orchestration_rounds=args.max_orchestration_rounds,
+        max_execute_retries_per_round=args.max_execute_retries_per_round,
         log_dir=args.log_dir,
         continue_on_error=not args.fail_fast,
         stream_events_to_stdout=args.verbose_events,

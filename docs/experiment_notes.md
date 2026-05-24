@@ -399,10 +399,10 @@ pytest: 15 passed
 
 批量运行结果：
 
-| 配置 | 日志行数 | 结果行数 | 错误数 | 预期文档命中 | 平均延迟 | 平均 token |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| C0 Naive RAG | 20 | 20 | 0 | 17/20 | 7441 ms | 915 |
-| C1 Query Rewrite RAG | 20 | 20 | 0 | 18/20 | 11073 ms | 1328 |
+| 配置                 | 日志行数 | 结果行数 | 错误数 | 预期文档命中 | 平均延迟 | 平均 token |
+| -------------------- | -------: | -------: | -----: | -----------: | -------: | ---------: |
+| C0 Naive RAG         |       20 |       20 |      0 |        17/20 |  7441 ms |        915 |
+| C1 Query Rewrite RAG |       20 |       20 |      0 |        18/20 | 11073 ms |       1328 |
 
 未命中预期文档的问题：
 
@@ -538,23 +538,23 @@ C1 日志行数: 20, error: 0
 
 总体结果：
 
-| 配置 | 文档级命中 | 未命中题目 | 平均延迟 | 平均 token | 平均检索 query 数 |
-| --- | ---: | --- | ---: | ---: | ---: |
-| C0 | 17/20 | Q005、Q007、Q013 | 7382 ms | 962 | 1.00 |
-| 旧 C1 | 18/20 | Q005、Q013 | 11073 ms | 1329 | 1.75 |
-| C1-final | 19/20 | Q013 | 37060 ms | 1905 | 3.95 |
+| 配置     | 文档级命中 | 未命中题目       | 平均延迟 | 平均 token | 平均检索 query 数 |
+| -------- | ---------: | ---------------- | -------: | ---------: | ----------------: |
+| C0       |      17/20 | Q005、Q007、Q013 |  7382 ms |        962 |              1.00 |
+| 旧 C1    |      18/20 | Q005、Q013       | 11073 ms |       1329 |              1.75 |
+| C1-final |      19/20 | Q013             | 37060 ms |       1905 |              3.95 |
 
 按任务类型统计：
 
-| 任务类型 | C0 | C1-final | 观察 |
-| --- | ---: | ---: | --- |
-| simple_qa | 4/4 | 4/4 | 清晰事实题中 C1 没有明显额外收益。 |
-| fuzzy_query | 2/4 | 4/4 | C1-final 的主要收益来自模糊/口语化问题。 |
-| multi_doc | 4/4 | 4/4 | 本轮多文档题 C0 已能命中，C1 提升不明显。 |
-| table_analysis | 2/3 | 2/3 | Q013 仍失败，说明仅 query rewrite 不足以解决表格/文件定位干扰。 |
-| calculation | 2/2 | 2/2 | 计算题当前仍按文本检索处理，不代表 C4 工具能力。 |
-| code_execution | 2/2 | 2/2 | 代码题当前仍按文本检索处理，不代表 C4 工具能力。 |
-| insufficient_evidence | 1/1 | 1/1 | 当前样例可命中相关材料，但仍需人工判断答案是否保守。 |
+| 任务类型              |  C0 | C1-final | 观察                                                            |
+| --------------------- | --: | -------: | --------------------------------------------------------------- |
+| simple_qa             | 4/4 |      4/4 | 清晰事实题中 C1 没有明显额外收益。                              |
+| fuzzy_query           | 2/4 |      4/4 | C1-final 的主要收益来自模糊/口语化问题。                        |
+| multi_doc             | 4/4 |      4/4 | 本轮多文档题 C0 已能命中，C1 提升不明显。                       |
+| table_analysis        | 2/3 |      2/3 | Q013 仍失败，说明仅 query rewrite 不足以解决表格/文件定位干扰。 |
+| calculation           | 2/2 |      2/2 | 计算题当前仍按文本检索处理，不代表 C4 工具能力。                |
+| code_execution        | 2/2 |      2/2 | 代码题当前仍按文本检索处理，不代表 C4 工具能力。                |
+| insufficient_evidence | 1/1 |      1/1 | 当前样例可命中相关材料，但仍需人工判断答案是否保守。            |
 
 关键案例：
 
@@ -649,11 +649,11 @@ runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
 
 汇总结果（与终端摘要、`c2_ablation_summary.json` 一致）：
 
-| 阶段 key | 题数 | 错误 | 文档级命中 | 命中率 | 均延迟 (ms) | 均 total_tokens | 均检索 query 数 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `c2_stage1_c1_hybrid` | 20 | 0 | 20/20 | 100.0% | 10715 | 2130 | 3.90 |
-| `c2_stage2_c1_hybrid_rerank` | 20 | 0 | 20/20 | 100.0% | 16130 | 13085 | 4.10 |
-| `c2_stage3_c1_hybrid_rerank_context` | 20 | 0 | 19/20 | 95.0% | 13975 | 13536 | 3.85 |
+| 阶段 key                               | 题数 | 错误 | 文档级命中 | 命中率 | 均延迟 (ms) | 均 total_tokens | 均检索 query 数 |
+| -------------------------------------- | ---: | ---: | ---------: | -----: | ----------: | --------------: | --------------: |
+| `c2_stage1_c1_hybrid`                |   20 |    0 |      20/20 | 100.0% |       10715 |            2130 |            3.90 |
+| `c2_stage2_c1_hybrid_rerank`         |   20 |    0 |      20/20 | 100.0% |       16130 |           13085 |            4.10 |
+| `c2_stage3_c1_hybrid_rerank_context` |   20 |    0 |      19/20 |  95.0% |       13975 |           13536 |            3.85 |
 
 初步观察：
 
@@ -694,8 +694,6 @@ src/agentic_rag/pipelines/local_rag.py
 3. **答案「正确率」列（自动化）**：调用 DeepSeek，按 `data/testset/references.csv` 中每条题的 **`judge_rule`**（及参考答案要点）对 **`answer`** 打 **0 / 0.5 / 1** 分；Prompt 见 `prompts/answer_judge_prompt.md`。评判实现位于独立包 **`src/agentic_rag/evaluation/ai_answer_judge/`**（详见 `docs/evaluation_ai_judge.md`）。入口脚本：`run_c2_ablation_answer_accuracy.py`（单文件评判：`run_score_answer_accuracy.py`）。逐题明细：`runs/results/c2_stage*_results_scored.csv`；机器摘要：`runs/results/c2_ablation_answer_accuracy.json`、`runs/results/c2_ablation_answer_accuracy_report.md`。
 4. **评判 token**：评分调用单独计费，**不计入** RAG 管线 JSONL/CSV 中的 `total_tokens`。
 
-
-
 对应任务：C2 检索三阶段消融复现、指标对齐赵启行批量实验写法，并落地 **可复用的 AI 评判模块**与批量打分脚本。
 
 已完成：
@@ -707,11 +705,11 @@ src/agentic_rag/pipelines/local_rag.py
 
 汇总表（同一测试集 20 题；**以下为 LLM 评判测试结果**，待人评）：
 
-| 阶段 | 文档级命中 | 未命中题 | 满分(1.0) | 部分对(0.5) | 错误(0) | 平均得分 | 均延迟(ms) | 均 total_tokens | 均检索 query 数 | 评判消耗 token |
-| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 阶段1：C1+混合检索 | 20/20 | — | 5 | 9 | 6 | 0.475 | 10715 | 2130 | 3.90 | 14385 |
-| 阶段2：C1+混合+重排 | 20/20 | — | 9 | 7 | 4 | 0.625 | 16130 | 13085 | 4.10 | 14790 |
-| 阶段3：C1+混合+重排+上下文 | 19/20 | Q013 | 1 | 1 | 18 | 0.075 | 13975 | 13536 | 3.85 | 11820 |
+| 阶段                       | 文档级命中 | 未命中题 | 满分(1.0) | 部分对(0.5) | 错误(0) | 平均得分 | 均延迟(ms) | 均 total_tokens | 均检索 query 数 | 评判消耗 token |
+| -------------------------- | ---------: | -------- | --------: | ----------: | ------: | -------: | ---------: | --------------: | --------------: | -------------: |
+| 阶段1：C1+混合检索         |      20/20 | —       |         5 |           9 |       6 |    0.475 |      10715 |            2130 |            3.90 |          14385 |
+| 阶段2：C1+混合+重排        |      20/20 | —       |         9 |           7 |       4 |    0.625 |      16130 |           13085 |            4.10 |          14790 |
+| 阶段3：C1+混合+重排+上下文 |      19/20 | Q013     |         1 |           1 |      18 |    0.075 |      13975 |           13536 |            3.85 |          11820 |
 
 解读注意：
 
@@ -747,19 +745,19 @@ docs/interface_and_logging_rules.md（§8 AI 评判模块输出）
 
 ### 已完成（实现摘要）
 
-| 模块 | 内容 |
-|------|------|
-| `orchestration/*`、`deep_planning/agent_cli.py`、`deep_planning/agent_runner.py`（等与编排入口直接相关的部分） | **本次重写/新增**：调度循环、CLI、`OrchestrationConfig`、与 Deep Agents / LangGraph 的接线方式；**复用**下层 RAG 与工具工厂封装。 |
-| `experiment/runner.py` | 新增 `run_knowledge_base_rag`，与 `kb_index_builder.load_or_build_knowledge_index` 共用全库索引。 |
-| `experiment/kb_ingest.py` | `ingest_local_file_to_kb`：追加 `documents.csv`、复制至 `data/raw/user_docs/`（默认）、`force_rebuild` 写回 Chroma。 |
-| `cli/app.py` | 子命令 `main.py kb ingest …`（`--no-copy` / `--no-rebuild` 等）。 |
-| `deep_planning/tools_factory.py` | `topic4_rag_query` 默认全库；绑单文档时用 `run_document_rag`；工具 `topic4_kb_ingest`（路径须在工程根内）。可选 `sandbox_exec_python`（视 `SANDBOX_*`）。 |
-| `orchestration/*` | `kb_grounding`、`loop` 中可选对齐核验与研判串联；`OrchestrationConfig` 开关。 |
-| `config.py` | `PROJECT_ROOT`；`.env` 优先覆盖 shell 空变量；`DEEPSEEK_API_KEY` 可回退 `OPENAI_API_KEY`。 |
-| `orchestration/loop.py` + `agent_cli.py` | 交互默认**多行**：粘贴后以单独一行 `end`/`END` 提交；`--single-line` 恢复单行；`--once-file` / `--stdin` 适合整表 `questions.csv`。 |
-| `rag/chroma_store.py` | 对 Chroma 读写加 `RLock`，缓解 LangGraph 并发工具导致的 `Collection … does not exist`。 |
-| `session_planner.py` / `agent_runner.py` / `judge_layer.py` | 刷新系统提示词，固化三层 Skill 边界。 |
-| `.cursor/skills/topic4-orchestration-layers/SKILL.md` | 编排三层职能说明，供后续改提示词或协作对照。 |
+| 模块                                                                                                                 | 内容                                                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `orchestration/*`、`deep_planning/agent_cli.py`、`deep_planning/agent_runner.py`（等与编排入口直接相关的部分） | **本次重写/新增**：调度循环、CLI、`OrchestrationConfig`、与 Deep Agents / LangGraph 的接线方式；**复用**下层 RAG 与工具工厂封装。                     |
+| `experiment/runner.py`                                                                                             | 新增 `run_knowledge_base_rag`，与 `kb_index_builder.load_or_build_knowledge_index` 共用全库索引。                                                               |
+| `experiment/kb_ingest.py`                                                                                          | `ingest_local_file_to_kb`：追加 `documents.csv`、复制至 `data/raw/user_docs/`（默认）、`force_rebuild` 写回 Chroma。                                        |
+| `cli/app.py`                                                                                                       | 子命令 `main.py kb ingest …`（`--no-copy` / `--no-rebuild` 等）。                                                                                            |
+| `deep_planning/tools_factory.py`                                                                                   | `topic4_rag_query` 默认全库；绑单文档时用 `run_document_rag`；工具 `topic4_kb_ingest`（路径须在工程根内）。可选 `sandbox_exec_python`（视 `SANDBOX_*`）。 |
+| `orchestration/*`                                                                                                  | `kb_grounding`、`loop` 中可选对齐核验与研判串联；`OrchestrationConfig` 开关。                                                                                 |
+| `config.py`                                                                                                        | `PROJECT_ROOT`；`.env` 优先覆盖 shell 空变量；`DEEPSEEK_API_KEY` 可回退 `OPENAI_API_KEY`。                                                                  |
+| `orchestration/loop.py` + `agent_cli.py`                                                                         | 交互默认**多行**：粘贴后以单独一行 `end`/`END` 提交；`--single-line` 恢复单行；`--once-file` / `--stdin` 适合整表 `questions.csv`。               |
+| `rag/chroma_store.py`                                                                                              | 对 Chroma 读写加 `RLock`，缓解 LangGraph 并发工具导致的 `Collection … does not exist`。                                                                        |
+| `session_planner.py` / `agent_runner.py` / `judge_layer.py`                                                    | 刷新系统提示词，固化三层 Skill 边界。                                                                                                                               |
+| `.cursor/skills/topic4-orchestration-layers/SKILL.md`                                                              | 编排三层职能说明，供后续改提示词或协作对照。                                                                                                                        |
 
 ### 典型运行命令（无密钥示例）
 
@@ -825,23 +823,23 @@ uv run python main.py agent --once-file data\testset\questions.csv
 
 ### 已完成（实现摘要）
 
-| 模块 | 内容 |
-|------|------|
-| `experiment/kb_inventory.py` | `file_path_registered_in_documents_csv`、`relative_path_under_project`：清单比对（路径规范化）。 |
-| `orchestration/planning_extensions.py` | `PlanningEnrichInput`、`format_query_rewrite_block`、`kb_execution_notes_for_layer2`；与 `rewrite` / 清单逻辑解耦。 |
-| `orchestration/types.py` | `OrchestrationConfig`：`enable_planning_query_rewrite`、`planning_rewrite_prompt_file`、`enable_kb_inventory_hints`。 |
-| `orchestration/registry.py` | `OrchestrationHooks.extend_agent_tools`；保留 `planning_context_enricher`。 |
-| `orchestration/loop.py` | 第一层前可选改写注入与自定义 enricher；第二层消息附加 KB 登记备注；合并 `additional_tools`；移除未使用的 `sys` 导入。 |
-| `deep_planning/session_planner.py` | `SessionPlan.kb_mutation_intent`、`planning_preamble`；L1 提示词扩展；`compose_layer2_user_message` 支持 `kb_execution_notes` 与 `needs_retrieval_tools` 分流说明。 |
-| `deep_planning/agent_cli.py` | `--planning-rewrite`、`--planning-rewrite-prompt`、`--no-kb-inventory-hints`。 |
-| `deep_planning/agent_runner.py` | `build_topic4_deep_agent(..., additional_tools=...)`；系统提示补充 `topic4_file_to_markdown`。 |
-| `deep_planning/tools_factory.py` | 工具 **`topic4_file_to_markdown`**；`dependency-groups.agent` 增加 **markitdown** 等传递依赖。 |
-| `tools/markitdown_tool.py`、`tools/__init__.py` | MarkItDown 封装与安全边界（`MARKITDOWN_MAX_FILE_BYTES`）。 |
-| `config.py` | `MARKITDOWN_MAX_FILE_BYTES`；CubeSandbox 运维备忘注释。 |
-| `orchestration/__init__.py` | 导出 `PlanningEnrichInput`、`PlanningContextEnricher`、`format_query_rewrite_block`、`kb_execution_notes_for_layer2`。 |
-| `.cursor/skills/topic4-orchestration-layers/SKILL.md` | 第二层工具表、`extend_agent_tools`、Skill 必要性说明。 |
-| `docs/ARCHITECTURE.md` | §2.4 `tools/` 实装说明；§2.9 工具表与依赖组；§2.11 沙箱/MarkItDown/Cube 备忘；§5 修订记录。 |
-| `tests/test_kb_inventory.py`、`tests/test_markitdown_tool.py` | 清单与 MarkItDown 封装单测。 |
+| 模块                                                              | 内容                                                                                                                                                                          |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `experiment/kb_inventory.py`                                    | `file_path_registered_in_documents_csv`、`relative_path_under_project`：清单比对（路径规范化）。                                                                          |
+| `orchestration/planning_extensions.py`                          | `PlanningEnrichInput`、`format_query_rewrite_block`、`kb_execution_notes_for_layer2`；与 `rewrite` / 清单逻辑解耦。                                                   |
+| `orchestration/types.py`                                        | `OrchestrationConfig`：`enable_planning_query_rewrite`、`planning_rewrite_prompt_file`、`enable_kb_inventory_hints`。                                                 |
+| `orchestration/registry.py`                                     | `OrchestrationHooks.extend_agent_tools`；保留 `planning_context_enricher`。                                                                                               |
+| `orchestration/loop.py`                                         | 第一层前可选改写注入与自定义 enricher；第二层消息附加 KB 登记备注；合并 `additional_tools`；移除未使用的 `sys` 导入。                                                     |
+| `deep_planning/session_planner.py`                              | `SessionPlan.kb_mutation_intent`、`planning_preamble`；L1 提示词扩展；`compose_layer2_user_message` 支持 `kb_execution_notes` 与 `needs_retrieval_tools` 分流说明。 |
+| `deep_planning/agent_cli.py`                                    | `--planning-rewrite`、`--planning-rewrite-prompt`、`--no-kb-inventory-hints`。                                                                                          |
+| `deep_planning/agent_runner.py`                                 | `build_topic4_deep_agent(..., additional_tools=...)`；系统提示补充 `topic4_file_to_markdown`。                                                                            |
+| `deep_planning/tools_factory.py`                                | 工具**`topic4_file_to_markdown`**；`dependency-groups.agent` 增加 **markitdown** 等传递依赖。                                                                 |
+| `tools/markitdown_tool.py`、`tools/__init__.py`               | MarkItDown 封装与安全边界（`MARKITDOWN_MAX_FILE_BYTES`）。                                                                                                                  |
+| `config.py`                                                     | `MARKITDOWN_MAX_FILE_BYTES`；CubeSandbox 运维备忘注释。                                                                                                                     |
+| `orchestration/__init__.py`                                     | 导出 `PlanningEnrichInput`、`PlanningContextEnricher`、`format_query_rewrite_block`、`kb_execution_notes_for_layer2`。                                                |
+| `.cursor/skills/topic4-orchestration-layers/SKILL.md`           | 第二层工具表、`extend_agent_tools`、Skill 必要性说明。                                                                                                                      |
+| `docs/ARCHITECTURE.md`                                          | §2.4 `tools/` 实装说明；§2.9 工具表与依赖组；§2.11 沙箱/MarkItDown/Cube 备忘；§5 修订记录。                                                                             |
+| `tests/test_kb_inventory.py`、`tests/test_markitdown_tool.py` | 清单与 MarkItDown 封装单测。                                                                                                                                                  |
 
 ### 典型命令（节选）
 
@@ -884,6 +882,7 @@ tests/test_markitdown_tool.py
 ---
 
 ## 2026-05-17 C3/C4 统一客户端、Agent Runtime、多文档入库与传入检查
+
 记录人：李金航
 阶段：课题四 —— 产品化客户端与 Runtime 骨架；多文档 Chroma 子集检索；传入文件治理与审计日志。
 
@@ -897,20 +896,20 @@ tests/test_markitdown_tool.py
 
 ### 已完成（实现摘要）
 
-| 模块 | 内容 |
-|------|------|
-| `cli/c34_client.py` | C3/C4 档位、`prepare_document_scope_from_input`、`run_c34_turn` → `QueryEngine`；Gradio 6 `role/content` 对话格式。 |
-| `documents/multi_doc.py` | 路径/自然语言解析、`SessionDocumentScope`、`build_session_document_scope`（含去重入库逻辑）。 |
-| `documents/ingest_inspector.py` | `inspect_document_paths`、`format_ingest_report_markdown`、`resolve_session_doc_ids`；`duplicate_content_in_kb` 默认复用 doc_id。 |
-| `experiment/runner.py` | `allowed_doc_ids` 过滤；终端 `[rag] 知识库检索限定 doc_id：…`。 |
-| `pipelines/local_rag.py` | 混合/稠密检索按 `allowed_doc_ids` 过滤 chunk。 |
-| `deep_planning/tools_factory.py` | 工具 JSON 增加 `allowed_doc_ids`、`retrieved_doc_ids`；`evidence_excerpt` 标注 `doc_id=`。 |
-| `deep_planning/agent_runner.py` | 绑定 doc_id 子集时提示核对 `retrieved_doc_ids`。 |
-| `orchestration/loop.py` | 传入 `kb_doc_ids`、`cli_documents_hint` 至 Agent 构建与 L2 消息。 |
-| `experiment/kb_ingest.py` | 批量入库后 `_KB_INDEX_MEMORY.pop(fp)`，避免陈旧内存索引。 |
-| `telemetry/audit_log.py`、`client_hooks.py` | 全局审计 JSONL + 编排层钩子。 |
-| `runtime/*` | `cli_router`、`QueryEngine`、`query_loop`、`governance`、REPL、headless、`AppState`/`effects`。 |
-| `tests/test_ingest_inspector.py` 等 | 传入检查、Runtime 相关单测。 |
+| 模块                                            | 内容                                                                                                                                      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `cli/c34_client.py`                           | C3/C4 档位、`prepare_document_scope_from_input`、`run_c34_turn` → `QueryEngine`；Gradio 6 `role/content` 对话格式。              |
+| `documents/multi_doc.py`                      | 路径/自然语言解析、`SessionDocumentScope`、`build_session_document_scope`（含去重入库逻辑）。                                         |
+| `documents/ingest_inspector.py`               | `inspect_document_paths`、`format_ingest_report_markdown`、`resolve_session_doc_ids`；`duplicate_content_in_kb` 默认复用 doc_id。 |
+| `experiment/runner.py`                        | `allowed_doc_ids` 过滤；终端 `[rag] 知识库检索限定 doc_id：…`。                                                                      |
+| `pipelines/local_rag.py`                      | 混合/稠密检索按 `allowed_doc_ids` 过滤 chunk。                                                                                          |
+| `deep_planning/tools_factory.py`              | 工具 JSON 增加 `allowed_doc_ids`、`retrieved_doc_ids`；`evidence_excerpt` 标注 `doc_id=`。                                        |
+| `deep_planning/agent_runner.py`               | 绑定 doc_id 子集时提示核对 `retrieved_doc_ids`。                                                                                        |
+| `orchestration/loop.py`                       | 传入 `kb_doc_ids`、`cli_documents_hint` 至 Agent 构建与 L2 消息。                                                                     |
+| `experiment/kb_ingest.py`                     | 批量入库后 `_KB_INDEX_MEMORY.pop(fp)`，避免陈旧内存索引。                                                                               |
+| `telemetry/audit_log.py`、`client_hooks.py` | 全局审计 JSONL + 编排层钩子。                                                                                                             |
+| `runtime/*`                                   | `cli_router`、`QueryEngine`、`query_loop`、`governance`、REPL、headless、`AppState`/`effects`。                               |
+| `tests/test_ingest_inspector.py` 等           | 传入检查、Runtime 相关单测。                                                                                                              |
 
 ### 典型命令
 
@@ -931,12 +930,12 @@ uv run python main.py agent --c3 --planning-rewrite
 
 ### 已知问题与排查（客户端多文档）
 
-| 现象 | 原因 / 处理 |
-|------|-------------|
-| 检查表 `duplicate_content_in_kb` 仍新建 doc_028/029 | **已修复**：`resolve_session_doc_ids` 跳过重复入库，复用 doc_024 等；需重启 client 加载新代码。 |
-| Agent 称检索到 LangChain 官方文档 | 常为误判或全库泄漏；核对工具 JSON 的 `retrieved_doc_ids` 与终端 `[rag] 限定 doc_id`；学习指南正文亦含 LangChain 关键词。 |
-| `grounded=false` | 第三层 KB 对齐：答复与 `evidence_excerpt` 不一致；区分「调度失败」与「引用不足」。 |
-| 对话里无法发附件/网址 | **未实现**；盘外文件用「开始会话」路径框；网址需先爬取或保存为本地文件入库。 |
+| 现象                                                  | 原因 / 处理                                                                                                                  |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 检查表 `duplicate_content_in_kb` 仍新建 doc_028/029 | **已修复**：`resolve_session_doc_ids` 跳过重复入库，复用 doc_024 等；需重启 client 加载新代码。                      |
+| Agent 称检索到 LangChain 官方文档                     | 常为误判或全库泄漏；核对工具 JSON 的 `retrieved_doc_ids` 与终端 `[rag] 限定 doc_id`；学习指南正文亦含 LangChain 关键词。 |
+| `grounded=false`                                    | 第三层 KB 对齐：答复与 `evidence_excerpt` 不一致；区分「调度失败」与「引用不足」。                                         |
+| 对话里无法发附件/网址                                 | **未实现**；盘外文件用「开始会话」路径框；网址需先爬取或保存为本地文件入库。                                           |
 
 ### 指纹与重复入库（备忘）
 
@@ -985,6 +984,7 @@ tests/test_runtime_*.py
 ---
 
 ## 2026-05-18 C4 外部工具对称化：Firecrawl 网页 + 本地文件动态工具族
+
 记录人：李金航
 阶段：课题四 —— 第二层工具与第一层填槽对齐「网页 / 本地盘」双通道；统一工具 JSON 外壳；C3 严格不暴露外部工具。
 
@@ -998,30 +998,30 @@ tests/test_runtime_*.py
 
 ### 已完成（实现摘要）
 
-| 模块 | 内容 |
-|------|------|
-| `tools/firecrawl_tool.py` | `scrape_url` / `search_web`；URL 抽取；`scrape_to_markdown_file` → `data/raw/web_snapshots/`；`firecrawl_configured()`。 |
-| `tools/file_tool.py` | `read_file_content`（根内 MarkItDown、根外 `parse_path`）；`ingest_file_to_kb`（盘外 `copy_file=True`）；统一 `format_*_response`。 |
-| `tools/response_format.py` | `schema_version: topic4.tool.v1` 外壳，Firecrawl / 文件工具共用。 |
-| `deep_planning/tools_factory.py` | `_build_firecrawl_tools`、`_build_c4_file_tools`；移除 `topic4_kb_ingest`、`topic4_file_to_markdown`、`topic4_read_local_file`。 |
-| `deep_planning/session_planner.py` | L1 字段 `needs_web_tools`、`web_urls`、`local_paths`；`format_c4_parsed_input_block` 注入 L2（链接 → scrape，路径 → file_read）。 |
-| `deep_planning/agent_runner.py` | L2 系统提示改为 `topic4_file_read` / `topic4_file_ingest` 与 Firecrawl 分工说明。 |
-| `runtime/tools/governance.py` | C4 工具白名单同步为新名称。 |
-| `orchestration/planning_extensions.py` | 入库提示改为 `topic4_file_ingest`（盘外可复制入库）。 |
-| `config.py` / `.env.example` | `FIRECRAWL_API_KEY`、`FIRECRAWL_MAX_OUTPUT_CHARS`、`FIRECRAWL_SEARCH_LIMIT`。 |
-| `pyproject.toml` | `agent` 依赖组增加 `firecrawl-py`。 |
-| `cli/c34_client.py` | 状态栏提示：无 Key 时仍可用 `topic4_file_*`。 |
-| 删除 | `tools/local_file_tool.py`（逻辑并入 `file_tool.py`）。 |
+| 模块                                     | 内容                                                                                                                                          |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools/firecrawl_tool.py`              | `scrape_url` / `search_web`；URL 抽取；`scrape_to_markdown_file` → `data/raw/web_snapshots/`；`firecrawl_configured()`。           |
+| `tools/file_tool.py`                   | `read_file_content`（根内 MarkItDown、根外 `parse_path`）；`ingest_file_to_kb`（盘外 `copy_file=True`）；统一 `format_*_response`。 |
+| `tools/response_format.py`             | `schema_version: topic4.tool.v1` 外壳，Firecrawl / 文件工具共用。                                                                           |
+| `deep_planning/tools_factory.py`       | `_build_firecrawl_tools`、`_build_c4_file_tools`；移除 `topic4_kb_ingest`、`topic4_file_to_markdown`、`topic4_read_local_file`。    |
+| `deep_planning/session_planner.py`     | L1 字段 `needs_web_tools`、`web_urls`、`local_paths`；`format_c4_parsed_input_block` 注入 L2（链接 → scrape，路径 → file_read）。   |
+| `deep_planning/agent_runner.py`        | L2 系统提示改为 `topic4_file_read` / `topic4_file_ingest` 与 Firecrawl 分工说明。                                                         |
+| `runtime/tools/governance.py`          | C4 工具白名单同步为新名称。                                                                                                                   |
+| `orchestration/planning_extensions.py` | 入库提示改为 `topic4_file_ingest`（盘外可复制入库）。                                                                                       |
+| `config.py` / `.env.example`         | `FIRECRAWL_API_KEY`、`FIRECRAWL_MAX_OUTPUT_CHARS`、`FIRECRAWL_SEARCH_LIMIT`。                                                           |
+| `pyproject.toml`                       | `agent` 依赖组增加 `firecrawl-py`。                                                                                                       |
+| `cli/c34_client.py`                    | 状态栏提示：无 Key 时仍可用 `topic4_file_*`。                                                                                               |
+| 删除                                     | `tools/local_file_tool.py`（逻辑并入 `file_tool.py`）。                                                                                   |
 
 ### C3 / C4 工具对照（客户端 B 线，2026-05-18 起）
 
-| 能力 | C3 | C4 |
-|------|----|----|
-| Chroma 检索 | `topic4_rag_query` | 同左 |
-| 读本地文件 | ❌ | `topic4_file_read`（动态） |
-| 本地文件入库 | ❌ | `topic4_file_ingest`（含盘外复制） |
-| 抓网页 / 搜索 | ❌ | Firecrawl 三件套（需 Key） |
-| 沙箱 Python | ❌ | 可选 `sandbox_exec_python` |
+| 能力          | C3                   | C4                                   |
+| ------------- | -------------------- | ------------------------------------ |
+| Chroma 检索   | `topic4_rag_query` | 同左                                 |
+| 读本地文件    | ❌                   | `topic4_file_read`（动态）         |
+| 本地文件入库  | ❌                   | `topic4_file_ingest`（含盘外复制） |
+| 抓网页 / 搜索 | ❌                   | Firecrawl 三件套（需 Key）           |
+| 沙箱 Python   | ❌                   | 可选 `sandbox_exec_python`         |
 
 ### 典型命令与配置
 
@@ -1070,7 +1070,7 @@ tests/test_file_tool.py
 
 ### Git 痕迹
 
-- **截至文档整理时**：本节功能在本地工作区，**尚未单独 commit**；建议在合并后使用类似  
+- **截至文档整理时**：本节功能在本地工作区，**尚未单独 commit**；建议在合并后使用类似
   `feat(tools): C4 Firecrawl 与 topic4_file_read/ingest 对称工具族` 提交，并与 `547f8ae`（05-17）区分。
 
 ---
@@ -1212,19 +1212,19 @@ force_rebuild=false
 
 ### 五、C2 正式复现实验结果
 
-| 阶段 | 题数 | 错误 | 文档级命中 | Gold chunk 命中 | 平均延迟(ms) | 平均 token | 平均检索 query 数 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `c2_stage1_c1_hybrid` | 20 | 0 | 19/20 | 9/20 | 17719 | 2143 | 4.00 |
-| `c2_stage2_c1_hybrid_rerank` | 20 | 0 | 20/20 | 15/20 | 28761 | 12462 | 3.85 |
-| `c2_stage3_c1_hybrid_rerank_context` | 20 | 0 | 20/20 | 15/20 | 27887 | 14462 | 4.15 |
+| 阶段                                   | 题数 | 错误 | 文档级命中 | Gold chunk 命中 | 平均延迟(ms) | 平均 token | 平均检索 query 数 |
+| -------------------------------------- | ---: | ---: | ---------: | --------------: | -----------: | ---------: | ----------------: |
+| `c2_stage1_c1_hybrid`                |   20 |    0 |      19/20 |            9/20 |        17719 |       2143 |              4.00 |
+| `c2_stage2_c1_hybrid_rerank`         |   20 |    0 |      20/20 |           15/20 |        28761 |      12462 |              3.85 |
+| `c2_stage3_c1_hybrid_rerank_context` |   20 |    0 |      20/20 |           15/20 |        27887 |      14462 |              4.15 |
 
 日志校验：
 
-| 阶段 | CSV 行数 | CSV error | JSONL 日志行数 | 日志 config |
-| --- | ---: | ---: | ---: | --- |
-| `c2_stage1_c1_hybrid` | 20 | 0 | 20 | `c2_stage1_c1_hybrid` |
-| `c2_stage2_c1_hybrid_rerank` | 20 | 0 | 20 | `c2_stage2_c1_hybrid_rerank` |
-| `c2_stage3_c1_hybrid_rerank_context` | 20 | 0 | 20 | `c2_stage3_c1_hybrid_rerank_context` |
+| 阶段                                   | CSV 行数 | CSV error | JSONL 日志行数 | 日志 config                            |
+| -------------------------------------- | -------: | --------: | -------------: | -------------------------------------- |
+| `c2_stage1_c1_hybrid`                |       20 |         0 |             20 | `c2_stage1_c1_hybrid`                |
+| `c2_stage2_c1_hybrid_rerank`         |       20 |         0 |             20 | `c2_stage2_c1_hybrid_rerank`         |
+| `c2_stage3_c1_hybrid_rerank_context` |       20 |         0 |             20 | `c2_stage3_c1_hybrid_rerank_context` |
 
 输出文件：
 
@@ -1270,11 +1270,11 @@ runs/logs/c2_stage3_c1_hybrid_rerank_context/run_logs.jsonl
 
 唐宁补充 `data/testset/manual_eval_c2.csv` 后，C2 三阶段人工评分显示：
 
-| 配置 | Answer Correctness | Citation Accuracy | 主要问题 |
-| --- | ---: | ---: | --- |
-| `c2_stage1_c1_hybrid` | 0.600 | 0.625 | 部分答案不完整 |
-| `c2_stage2_c1_hybrid_rerank` | 0.800 | 0.800 | 整体最好，仍有少量 partial answer |
-| `c2_stage3_c1_hybrid_rerank_context`（旧版） | 0.150 | 0.200 | `unsupported_refusal` 14/20 |
+| 配置                                           | Answer Correctness | Citation Accuracy | 主要问题                          |
+| ---------------------------------------------- | -----------------: | ----------------: | --------------------------------- |
+| `c2_stage1_c1_hybrid`                        |              0.600 |             0.625 | 部分答案不完整                    |
+| `c2_stage2_c1_hybrid_rerank`                 |              0.800 |             0.800 | 整体最好，仍有少量 partial answer |
+| `c2_stage3_c1_hybrid_rerank_context`（旧版） |              0.150 |             0.200 | `unsupported_refusal` 14/20     |
 
 旧版 Stage3 采用固定邻接扩展：对 Top-K 命中块统一拼接 `±1` 邻接 chunk。该策略能增加上下文，但也会引入不相关内容，导致模型在部分题目中错误判断“证据不足”。因此，本次优化目标不是继续扩大上下文，而是将 Stage3 改为“选择性上下文扩展”。
 
@@ -1345,11 +1345,11 @@ runs/results/c2_ablation_report.md
 
 ### 五、优化前后初步对比
 
-| 配置 | 文档命中 | Gold chunk 命中 | 平均延迟(ms) | 平均 token | 人工 Answer | 人工 Citation |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Stage2：hybrid + rerank | 20/20 | 15/20 | 28761 | 12462 | 0.800 | 0.800 |
-| 旧 Stage3：固定邻接扩展 | 20/20 | 15/20 | 27887 | 14462 | 0.150 | 0.200 |
-| 新 Stage3：选择性上下文扩展 | 19/20 | 15/20 | 37057 | 13352 | 待人工评分 | 待人工评分 |
+| 配置                        | 文档命中 | Gold chunk 命中 | 平均延迟(ms) | 平均 token | 人工 Answer | 人工 Citation |
+| --------------------------- | -------: | --------------: | -----------: | ---------: | ----------: | ------------: |
+| Stage2：hybrid + rerank     |    20/20 |           15/20 |        28761 |      12462 |       0.800 |         0.800 |
+| 旧 Stage3：固定邻接扩展     |    20/20 |           15/20 |        27887 |      14462 |       0.150 |         0.200 |
+| 新 Stage3：选择性上下文扩展 |    19/20 |           15/20 |        37057 |      13352 |  待人工评分 |    待人工评分 |
 
 注意：
 
@@ -1362,17 +1362,17 @@ runs/results/c2_ablation_report.md
 
 新版 Stage3 的 `context_expansion_applied_count` 显示，扩展只发生在以下题目：
 
-| 题号 | task_type | 扩展次数 |
-| --- | --- | ---: |
-| Q005 | `fuzzy_query` | 3 |
-| Q006 | `fuzzy_query` | 3 |
-| Q007 | `fuzzy_query` | 3 |
-| Q008 | `fuzzy_query` | 3 |
-| Q009 | `multi_doc` | 3 |
-| Q010 | `multi_doc` | 3 |
-| Q011 | `multi_doc` | 3 |
-| Q012 | `multi_doc` | 3 |
-| Q020 | `insufficient_evidence` | 3 |
+| 题号 | task_type                 | 扩展次数 |
+| ---- | ------------------------- | -------: |
+| Q005 | `fuzzy_query`           |        3 |
+| Q006 | `fuzzy_query`           |        3 |
+| Q007 | `fuzzy_query`           |        3 |
+| Q008 | `fuzzy_query`           |        3 |
+| Q009 | `multi_doc`             |        3 |
+| Q010 | `multi_doc`             |        3 |
+| Q011 | `multi_doc`             |        3 |
+| Q012 | `multi_doc`             |        3 |
+| Q020 | `insufficient_evidence` |        3 |
 
 未触发扩展的题型包括：
 
@@ -1535,30 +1535,30 @@ archive/experiment_runs/c3_smoke_failed_before_json_encoding_fix_2026-05-18
 
 最终有效结果：
 
-| 指标 | 结果 |
-| --- | ---: |
-| 总题数 | 10 |
-| 程序级错误 | 0 |
-| RAG 调用 | 10/10 |
-| 多查询 / 多 pipeline 行为 | 10/10 |
-| 平均延迟 | 152038 ms |
-| 平均 gold doc 覆盖率 | 0.9000 |
-| 平均 gold chunk 覆盖率 | 0.6067 |
+| 指标                      |      结果 |
+| ------------------------- | --------: |
+| 总题数                    |        10 |
+| 程序级错误                |         0 |
+| RAG 调用                  |     10/10 |
+| 多查询 / 多 pipeline 行为 |     10/10 |
+| 平均延迟                  | 152038 ms |
+| 平均 gold doc 覆盖率      |    0.9000 |
+| 平均 gold chunk 覆盖率    |    0.6067 |
 
 逐题结果：
 
-| 题号 | 类别 | gold doc 覆盖 | gold chunk 覆盖 | 延迟(ms) |
-| --- | --- | ---: | ---: | ---: |
-| Q021 | 多轮检索 | 2/3 | 1/3 | 138887 |
-| Q022 | 基础验收 | 4/4 | 3/4 | 136057 |
-| Q023 | 多轮检索 | 5/5 | 3/5 | 133619 |
-| Q024 | 基础验收 | 3/3 | 5/6 | 126346 |
-| Q025 | 多轮检索 | 2/3 | 3/6 | 196684 |
-| Q026 | 基础验收 | 3/3 | 4/5 | 114438 |
-| Q027 | 压力测试 | 2/3 | 1/3 | 178996 |
-| Q028 | 基础验收 | 3/3 | 2/4 | 139056 |
-| Q029 | 压力测试 | 2/2 | 2/3 | 282236 |
-| Q030 | 基础验收 | 1/1 | 3/4 | 74062 |
+| 题号 | 类别     | gold doc 覆盖 | gold chunk 覆盖 | 延迟(ms) |
+| ---- | -------- | ------------: | --------------: | -------: |
+| Q021 | 多轮检索 |           2/3 |             1/3 |   138887 |
+| Q022 | 基础验收 |           4/4 |             3/4 |   136057 |
+| Q023 | 多轮检索 |           5/5 |             3/5 |   133619 |
+| Q024 | 基础验收 |           3/3 |             5/6 |   126346 |
+| Q025 | 多轮检索 |           2/3 |             3/6 |   196684 |
+| Q026 | 基础验收 |           3/3 |             4/5 |   114438 |
+| Q027 | 压力测试 |           2/3 |             1/3 |   178996 |
+| Q028 | 基础验收 |           3/3 |             2/4 |   139056 |
+| Q029 | 压力测试 |           2/2 |             2/3 |   282236 |
+| Q030 | 基础验收 |           1/1 |             3/4 |    74062 |
 
 ### 七、阶段判断
 
@@ -1618,31 +1618,32 @@ docs/c3_smoke_experiment_guide.md
 
 ### 已完成（代码与文档）
 
-1. **C4 专用工具**（与 `data/testset/questions.csv` 中 `required_tool` 对齐）  
-   - `src/agentic_rag/tools/calculator_tool.py` → Agent 工具 `topic4_calculator`  
-   - `src/agentic_rag/tools/table_analyzer_tool.py` → `topic4_table_analyzer`（pandas；兼容带 Markdown 前言的 CSV）  
-   - `src/agentic_rag/tools/code_runner_tool.py` → `topic4_code_runner`（底层 `sandbox/local_subprocess.py`）  
-   - 注册于 `deep_planning/tools_factory.py`；C4 且 `SANDBOX_ENABLED=true` 时另保留 `sandbox_exec_python` 兼容名  
+1. **C4 专用工具**（与 `data/testset/questions.csv` 中 `required_tool` 对齐）
 
-2. **C3/C4 批量评测**（与 `main.py client` **同一套** `QueryEngine` + 编排链，非旁路脚本）  
-   - `src/agentic_rag/experiment/c34_batch.py`  
-   - 根目录 `run_c34_batch_eval.py`；亦可 `uv run python main.py experiment c34 ...`  
-   - 预设拆分：`c3_smoke`（Q021–Q030）、`c4_tools`（Q013,Q016–Q019）、`main_20`、`ids`  
-   - 日志：`runs/logs/c3_agentic_retrieval_batch/`、`runs/logs/c4_tool_augmented_batch/`  
+   - `src/agentic_rag/tools/calculator_tool.py` → Agent 工具 `topic4_calculator`
+   - `src/agentic_rag/tools/table_analyzer_tool.py` → `topic4_table_analyzer`（pandas；兼容带 Markdown 前言的 CSV）
+   - `src/agentic_rag/tools/code_runner_tool.py` → `topic4_code_runner`（底层 `sandbox/local_subprocess.py`）
+   - 注册于 `deep_planning/tools_factory.py`；C4 且 `SANDBOX_ENABLED=true` 时另保留 `sandbox_exec_python` 兼容名
+2. **C3/C4 批量评测**（与 `main.py client` **同一套** `QueryEngine` + 编排链，非旁路脚本）
 
-3. **Gradio 流式展示**  
-   - `cli/c34_client.py`：`iter_c34_turn_stream`、`_chat_stream`；编排事件经 `telemetry/streaming_hooks.py` 推送  
+   - `src/agentic_rag/experiment/c34_batch.py`
+   - 根目录 `run_c34_batch_eval.py`；亦可 `uv run python main.py experiment c34 ...`
+   - 预设拆分：`c3_smoke`（Q021–Q030）、`c4_tools`（Q013,Q016–Q019）、`main_20`、`ids`
+   - 日志：`runs/logs/c3_agentic_retrieval_batch/`、`runs/logs/c4_tool_augmented_batch/`
+3. **Gradio 流式展示**
 
-4. **缺陷修复**  
-   - `orchestration/loop.py`：删除重复的 `enable_c4_tools=` 实参（曾导致 SyntaxError）  
+   - `cli/c34_client.py`：`iter_c34_turn_stream`、`_chat_stream`；编排事件经 `telemetry/streaming_hooks.py` 推送
+4. **缺陷修复**
 
-5. **单测**  
-   - `tests/test_c4_computation_tools.py`（5 passed）  
+   - `orchestration/loop.py`：删除重复的 `enable_c4_tools=` 实参（曾导致 SyntaxError）
+5. **单测**
 
-6. **文档同步**  
-   - 根目录 `README.md` §12 进度与打开方式  
-   - `docs/ARCHITECTURE.md` §5、工具表、C3/C4 流程图  
-   - 本条目  
+   - `tests/test_c4_computation_tools.py`（5 passed）
+6. **文档同步**
+
+   - 根目录 `README.md` §12 进度与打开方式
+   - `docs/ARCHITECTURE.md` §5、工具表、C3/C4 流程图
+   - 本条目
 
 ### 关键命令
 
@@ -1678,12 +1679,12 @@ runs/logs/c4_tool_augmented_batch/batch_report.json
 
 ### 设计说明（答辩可用）
 
-| 开题名称 | 实现 | 说明 |
-| --- | --- | --- |
-| file_reader | `topic4_file_read` | 根内 MarkItDown，根外 `parse_path` |
-| calculator | `topic4_calculator` | AST 安全算术，非 LLM 心算 |
-| table_analyzer | `topic4_table_analyzer` | pandas 统计；**不是** MarkItDown |
-| code_runner | `topic4_code_runner` | 本地临时目录子进程；**非** Modal 远端沙箱 |
+| 开题名称       | 实现                      | 说明                                            |
+| -------------- | ------------------------- | ----------------------------------------------- |
+| file_reader    | `topic4_file_read`      | 根内 MarkItDown，根外 `parse_path`            |
+| calculator     | `topic4_calculator`     | AST 安全算术，非 LLM 心算                       |
+| table_analyzer | `topic4_table_analyzer` | pandas 统计；**不是** MarkItDown          |
+| code_runner    | `topic4_code_runner`    | 本地临时目录子进程；**非** Modal 远端沙箱 |
 
 Deep Agents 参考：[Overview](https://docs.langchain.com/oss/python/deepagents/overview) — 本项目 L2 已用 `create_deep_agent`；内置 `write_todos`/虚拟 FS 由 harness 提供；**执行隔离**采用自研轻量沙箱以满足课程可复现要求。
 
@@ -1693,14 +1694,14 @@ Deep Agents 参考：[Overview](https://docs.langchain.com/oss/python/deepagents
 
 ### 遇到问题
 
-- `rag_eval_results.csv` 含 Markdown 前言，直接 `read_csv` 会失败 → 已在 `table_analyzer` 中跳过前言行。  
+- `rag_eval_results.csv` 含 Markdown 前言，直接 `read_csv` 会失败 → 已在 `table_analyzer` 中跳过前言行。
 - Windows 控制台编码可能导致 Agent 输出乱码 → 批量建议 `$env:PYTHONUTF8=1`。
 
 ### 下一步
 
-1. 跑满 `c3_smoke` / `c4_tools` 批量并人工抽检。  
-2. 题集扩至 40–50 题。  
-3. 补 C4 消融配置与 Benchmark/C5 样例。  
+1. 跑满 `c3_smoke` / `c4_tools` 批量并人工抽检。
+2. 题集扩至 40–50 题。
+3. 补 C4 消融配置与 Benchmark/C5 样例。
 4. 整理 10+ 失败案例写入计划中的 `failure_cases.md`。
 
 ## 2026-05-19 C4 文件写盘、编辑与受限 shell（工程增补）
@@ -1713,18 +1714,19 @@ Deep Agents 参考：[Overview](https://docs.langchain.com/oss/python/deepagents
 
 ### 已完成
 
-1. **写盘与编辑**（`FILE_WRITE_ENABLED`，默认 true）  
-   - `topic4_file_write`：覆盖/追加 UTF-8 文本  
-   - `topic4_file_edit`：search-replace（可 `replace_all`）  
+1. **写盘与编辑**（`FILE_WRITE_ENABLED`，默认 true）
+
+   - `topic4_file_write`：覆盖/追加 UTF-8 文本
+   - `topic4_file_edit`：search-replace（可 `replace_all`）
    - 底层 `tools/file_tool.py` + `tools/path_policy.py`（禁止 `.env`、`.git/`、`uv.lock`、`documents.csv` 等）
+2. **命令执行**（`SHELL_COMMAND_ENABLED`，默认 true）
 
-2. **命令执行**（`SHELL_COMMAND_ENABLED`，默认 true）  
-   - `topic4_shell_exec`：工程子目录或会话沙箱 cwd；Windows 为 PowerShell  
+   - `topic4_shell_exec`：工程子目录或会话沙箱 cwd；Windows 为 PowerShell
    - `sandbox/shell_runner.py`：命令黑名单（`rm -rf`、`pip install` 等）
+3. **注册与文档**
 
-3. **注册与文档**  
-   - `tools_factory.py`、`governance.py`、`agent_runner` / `session_planner` 提示词  
-   - `configs/c4_tool_augmented.yaml`：`allow_file_write: true`  
+   - `tools_factory.py`、`governance.py`、`agent_runner` / `session_planner` 提示词
+   - `configs/c4_tool_augmented.yaml`：`allow_file_write: true`
    - `tests/test_file_ops_tools.py`（5 项，与 C4 计算工具测一并 10 passed）
 
 ### 环境变量
@@ -1738,8 +1740,8 @@ SANDBOX_ENABLED=true    # Python 代码题仍建议开启
 
 ### 使用注意
 
-- 写入 `data/raw/` 后需 **`main.py kb sync`** 或 **`topic4_file_ingest`** 才进 Chroma。  
-- C3 模式仍无写盘/shell 工具。  
+- 写入 `data/raw/` 后需 **`main.py kb sync`** 或 **`topic4_file_ingest`** 才进 Chroma。
+- C3 模式仍无写盘/shell 工具。
 - 关闭写盘：`.env` 设 `FILE_WRITE_ENABLED=false`（同时不注册 write/edit）。
 
 ## 2026-05-19 C2 Stage3 两轮优化复盘与最终保留版本
@@ -1780,21 +1782,21 @@ SANDBOX_ENABLED=true    # Python 代码题仍建议开启
 
 AI Judge 辅助评分结果：
 
-| 配置 | Answer Correctness | Answer Completeness | Citation Accuracy | Faithfulness | 加权分 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Stage2 rerank | 0.625 | 0.625 | 0.625 | 0.950 | 0.706 |
-| Stage3 old selective | 0.750 | 0.725 | 0.675 | 0.950 | 0.775 |
-| Stage3 keyword filter | 0.600 | 0.600 | 0.600 | 0.900 | 0.675 |
-| Stage3 no keyword filter | 0.750 | 0.725 | 0.675 | 0.925 | 0.769 |
+| 配置                     | Answer Correctness | Answer Completeness | Citation Accuracy | Faithfulness | 加权分 |
+| ------------------------ | -----------------: | ------------------: | ----------------: | -----------: | -----: |
+| Stage2 rerank            |              0.625 |               0.625 |             0.625 |        0.950 |  0.706 |
+| Stage3 old selective     |              0.750 |               0.725 |             0.675 |        0.950 |  0.775 |
+| Stage3 keyword filter    |              0.600 |               0.600 |             0.600 |        0.900 |  0.675 |
+| Stage3 no keyword filter |              0.750 |               0.725 |             0.675 |        0.925 |  0.769 |
 
 运行指标对比：
 
-| 配置 | 题数 | 文档命中 | Gold chunk 命中 | 触发扩展题数 | 扩展 chunk 总数 | 平均延迟(ms) | 平均 token |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Stage2 rerank | 20 | 20/20 | 15/20 | 0 | 0 | 28761 | 12462 |
-| Stage3 old selective | 20 | 19/20 | 15/20 | 9 | 27 | 37057 | 13352 |
-| Stage3 keyword filter | 20 | 20/20 | 15/20 | 9 | 26 | 67001 | 13590 |
-| Stage3 no keyword filter | 20 | 19/20 | 15/20 | 9 | 27 | 72406 | 13018 |
+| 配置                     | 题数 | 文档命中 | Gold chunk 命中 | 触发扩展题数 | 扩展 chunk 总数 | 平均延迟(ms) | 平均 token |
+| ------------------------ | ---: | -------: | --------------: | -----------: | --------------: | -----------: | ---------: |
+| Stage2 rerank            |   20 |    20/20 |           15/20 |            0 |               0 |        28761 |      12462 |
+| Stage3 old selective     |   20 |    19/20 |           15/20 |            9 |              27 |        37057 |      13352 |
+| Stage3 keyword filter    |   20 |    20/20 |           15/20 |            9 |              26 |        67001 |      13590 |
+| Stage3 no keyword filter |   20 |    19/20 |           15/20 |            9 |              27 |        72406 |      13018 |
 
 阶段判断：
 
@@ -1844,3 +1846,174 @@ keyword filter 版本
    - 最终答案引用不准确。
 3. 最终报告中，Stage3 应写成“经过选择性扩展优化后可用性改善，但收益不稳定”，而不是写成“Stage3 明显优于 Stage2”。
 4. AI Judge 评分只作为辅助参考，正式结论仍以人工 `Answer Correctness` 和 `Citation Accuracy` 为准。
+
+## 2026-05-24 C3 30 题完整版批量实验记录
+
+记录人：赵启行
+
+阶段：C3 Agentic Retrieval RAG 正式批量验证。
+
+本轮按“C3 完整版”运行 Q001-Q030 共 30 题，目标是验证当前 C3 是否能稳定体现任务规划、查询拆解、多次 RAG 检索、多 pipeline 选择、初步答案整合与证据检查能力。本轮开启 `planning-rewrite`，因此后续结论应写作“C3 完整版 + planning-rewrite”，不能把全部效果单独归因于 planning。
+
+### 一、实验配置
+
+```text
+commit = 31434a6 docs: reorganize readme and repository documentation
+python = 3.12.10
+tier = c3
+split = ids
+question_ids = Q001-Q030
+planning_rewrite_enabled = true
+max_orchestration_rounds = 默认值
+max_execute_retries_per_round = 默认值
+```
+
+知识库状态：
+
+```text
+实验前已执行：uv run python main.py kb sync
+知识库文件：data/processed/chunks.jsonl
+chunks.jsonl SHA256 = 9D2913CBD42669BCA2A00CCFF0843DEFA822350F72D533CA4CBA2DA3A365A4D1
+索引方式：自实现轻量内存向量索引 SimpleVectorIndex
+embedding 缓存：data/processed/kb_embedding_cache.pkl
+说明：本轮 C3 不是基于 Chroma 向量数据库运行。
+```
+
+正式运行命令：
+
+```powershell
+$env:PYTHONUTF8='1'
+$env:PYTHONIOENCODING='utf-8'
+$ids = (1..30 | ForEach-Object { 'Q{0:D3}' -f $_ }) -join ','
+uv run python run_c34_batch_eval.py `
+  --tier c3 `
+  --split ids `
+  --question-ids $ids `
+  --planning-rewrite `
+  --log-dir runs/logs/c3_agentic_retrieval_30_batch_full_20260524
+```
+
+### 二、输出文件
+
+```text
+runs/results/c3_ids_results.csv
+runs/results/c3_formal_30_llm_judged.csv
+runs/results/c3_formal_30_questions.csv
+runs/results/c3_formal_30_references.csv
+runs/logs/c3_agentic_retrieval_30_batch_full_20260524/run_logs.jsonl
+runs/logs/c3_agentic_retrieval_30_batch_full_20260524/batch_report.json
+docs/c3_formal_30_experiment_report.md
+```
+
+其中 `docs/c3_formal_30_experiment_report.md` 已覆盖为 C3 完整版实验报告。
+
+### 三、实验结果摘要
+
+| 指标 | 结果 |
+| --- | ---: |
+| 题目数 | 30 |
+| 成功完成 | 30 |
+| 程序级错误 | 0 |
+| 总运行耗时 | 约 78.4 分钟 |
+| 平均延迟 | 156693.3 ms |
+| p95 延迟 | 480413 ms |
+| 平均 RAG 调用次数 | 10.8667 |
+| 多次检索题数 | 22/30 |
+| 平均 gold doc coverage | 0.9228 |
+| 平均 gold chunk coverage | 0.6975 |
+| AI Judge Answer Correctness | 0.7667 |
+| AI Judge Answer Completeness | 0.7667 |
+| AI Judge Citation Accuracy | 0.7500 |
+| AI Judge Faithfulness | 0.9500 |
+| AI Judge 加权综合分 | 0.8083 |
+
+按题目来源分组：
+
+| 分组 | 题数 | 平均延迟(ms) | 平均 RAG 调用 | gold doc coverage | gold chunk coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Q001-Q020 主测试集 | 20 | 138348.75 | 8.95 | 0.9008 | 0.6246 |
+| Q021-Q030 C3 候选题 | 10 | 193382.4 | 14.7 | 0.9667 | 0.8433 |
+
+按任务类型分组：
+
+| 任务类型 | 题数 | 平均延迟(ms) | 平均 RAG 调用 | gold doc coverage | gold chunk coverage |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| simple_qa | 4 | 65450.50 | 3.75 | 1.0000 | 0.3458 |
+| fuzzy_query | 5 | 127184.60 | 7.40 | 0.7033 | 0.6038 |
+| multi_doc | 12 | 201151.00 | 15.50 | 1.0000 | 0.8478 |
+| table_analysis | 3 | 326850.67 | 20.67 | 0.9444 | 0.4500 |
+| calculation | 2 | 24444.50 | 1.00 | 1.0000 | 1.0000 |
+| code_execution | 2 | 36466.50 | 1.50 | 1.0000 | 0.8334 |
+| insufficient_evidence | 2 | 143444.00 | 10.50 | 0.6666 | 0.6666 |
+
+观察：
+
+1. `multi_doc` 任务最能体现 C3 的价值，gold doc coverage 达到 1.0000，gold chunk coverage 达到 0.8478，但平均延迟约 201 秒。
+2. `simple_qa` 任务不适合全部走完整 C3，doc 级覆盖为 1.0000，但 chunk 级覆盖只有 0.3458，说明多轮检索没有带来稳定收益。
+3. `table_analysis` 平均 RAG 调用次数最高，延迟最高，但 chunk 级覆盖只有 0.4500，说明这类任务应交给 C4 表格工具，而不是继续依赖 C3 检索。
+4. `calculation` 和 `code_execution` 在本轮覆盖较好，但其本质仍更适合 C4 工具验证。
+5. `insufficient_evidence` 任务仍不稳定，需要后续增强证据不足判定与保守回答策略。
+
+### 四、主要问题
+
+覆盖不足或评分偏低的重点题：
+
+```text
+Q001, Q002, Q004, Q007, Q008, Q009, Q012, Q013, Q014, Q017, Q020, Q023, Q027
+```
+
+其中：
+
+1. Q007、Q008、Q027 说明 fuzzy query / 模糊需求定位仍不稳，planning-rewrite 不能完全解决模糊意图识别。
+2. Q013 是典型表格分析任务，C3 多次检索仍难以完成，应进入 C4 工具调用验证。
+3. Q009、Q012 的 AI Judge 低分，说明完整 C3 多轮检索可能导致答案偏题或证据组织发散。
+4. Q001、Q002、Q004 简单题文档命中但 chunk 定位差，说明 C3 不适合所有问题都走完整链路。
+5. Q020 需要人工重点复核：它涉及综合判断，自动覆盖率和最终答案质量不一定一致。
+
+AI Judge 低分题：
+
+```text
+Q007, Q008, Q009, Q012, Q013, Q014, Q017, Q023
+```
+
+### 五、阶段性结论
+
+1. C3 完整版可以稳定跑完 30 题，程序级错误为 0。
+2. 完整版能充分体现 Agentic Retrieval 行为，平均每题 RAG 调用 10.8667 次，22/30 题出现多次检索。
+3. C3 对多文档复杂任务更有价值，尤其是 Q021-Q030 候选题的 gold chunk coverage 达到 0.8433。
+4. C3 的成本明显升高，平均延迟约 157 秒，p95 延迟约 480 秒，不适合作为所有问题的默认路径。
+5. 更多检索不等于更好答案。AI Judge 加权综合分为 0.8083，说明 C3 虽然能覆盖更多证据，但仍可能出现答案发散、偏题或引用不精确。
+6. C3 更适合多文档、复杂证据整合和需要多次检索的问题，不适合简单问答、表格分析、计算和代码执行类任务。
+7. 本轮仍开启 planning-rewrite，因此报告应写作“C3 完整版 + planning-rewrite”。
+8. 若要证明 C3 相比 C2 的收益，仍需后续补 C2 同题对照。
+
+### 六、后续动作
+
+1. 唐宁根据 `runs/results/c3_ids_results.csv` 和 `runs/results/c3_formal_30_llm_judged.csv` 建立人工评分：
+
+```text
+data/testset/manual_eval_c3_formal.csv
+```
+
+人工评分字段建议包含：
+
+```text
+question_id,answer_correctness,citation_accuracy,planning_quality,
+multi_round_quality,retrieval_sufficiency,self_check_quality,
+main_problem,comment,reviewer,status
+```
+
+2. 人工优先复盘：
+
+```text
+Q007, Q008, Q009, Q012, Q013, Q020, Q023, Q027, Q029
+```
+
+3. 赵启行后续整理 C3 结论时，应强调：
+   - C3 完整版能提升复杂多文档任务的证据覆盖；
+   - C3 完整版成本高，不适合所有任务；
+   - 当前不能直接写成“C3 显著优于 C2”；
+   - 需要补 C2 同题对照后，才能做 C2/C3 的正式横向结论；
+   - 工具型任务应进入 C4。
+
+4. 李金航后续进入 C4 时，优先用 Q013、Q016-Q019 验证工具调用能否弥补 C3 在表格、计算和代码执行任务上的局限。
