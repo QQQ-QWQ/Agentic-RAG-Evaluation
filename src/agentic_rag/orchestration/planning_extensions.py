@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from agentic_rag.deep_planning.session_planner import looks_like_document_path
 from agentic_rag.experiment.kb_inventory import (
     file_path_registered_in_documents_csv,
     relative_path_under_project,
@@ -89,7 +90,7 @@ def kb_execution_notes_for_layer2(
                 f"- 单文件 `{rel_s}` **未在** `documents.csv` 中登记。"
                 "若需纳入全库向量索引，可调用 `topic4_file_ingest`（盘外路径会复制进工程）。"
             )
-    elif plan_document_path_str and str(plan_document_path_str).strip():
+    elif plan_document_path_str and looks_like_document_path(plan_document_path_str):
         p = str(plan_document_path_str).strip()
         lines.append(
             f"- 第一层给出路径字符串 `{p}`，但系统侧 **未能解析为存在的本地文件**。"

@@ -84,7 +84,48 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     end = t.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise ValueError(f"输出中无 JSON 对象：{text[:200]}…")
-    return json.loads(t[start : end + 1])
+    parsed = json.loads(t[start : end + 1])
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, list):
+        for item in parsed:
+            if isinstance(item, dict):
+                return item
+    raise ValueError(f"JSON 解析结果不是 object：{type(parsed).__name__}")
+
+
+def looks_like_document_path(value: str | None) -> bool:
+    """过滤 UI 检索范围文案等误填进 document_path 的非路径字符串。"""
+    if not value or not str(value).strip():
+        return False
+    s = str(value).strip()
+    if "\n" in s or len(s) > 260:
+        return False
+    if s.startswith("检索范围") or "检索范围" in s[:48]:
+        return False
+    if "**" in s and "/" not in s and "\\" not in s:
+        return False
+    if re.match(r"^[A-Za-z]:[/\\]", s):
+        return True
+    if s.startswith(("/", "./", "../", "~")):
+        return True
+    if ("/" in s or "\\" in s) and re.search(
+        r"\.(md|pdf|csv|txt|jsonl|py|yaml|yml|docx|xlsx)\b", s, re.I
+    ):
+        return True
+    try:
+        return Path(s).expanduser().is_file()
+    except OSError:
+        return False
+
+
+def _coerce_document_path(value: str | None) -> str | None:
+    if not value or not str(value).strip():
+        return None
+    s = str(value).strip().strip('"')
+    if looks_like_document_path(s):
+        return s
+    return None
 
 
 def _merge_str_lists(*parts: list[str] | None) -> list[str]:
@@ -164,8 +205,9 @@ def run_layer1_session_plan(
 
     llm = build_deepseek_chat_model(temperature=temperature)
     hint = ""
-    if cli_document_path:
-        hint = f"\n【命令行已绑定文档】{cli_document_path}\n"
+    cli_path = _coerce_document_path(cli_document_path)
+    if cli_path:
+        hint = f"\n【命令行已绑定文档】{cli_path}\n"
     prior = ""
     if prior_context and prior_context.strip():
         prior = f"\n【编排上下文·供重规划参考】\n{prior_context.strip()}\n"
@@ -183,24 +225,40 @@ def run_layer1_session_plan(
     blocks.append("【用户自然语言输入】\n" + user_natural_language.strip() + "\n")
     human = "\n\n".join(blocks)
 
-    msg = llm.invoke(
-        [
-            SystemMessage(content=LAYER1_SYSTEM_PROMPT),
-            HumanMessage(content=human),
-        ]
-    )
+    try:
+        msg = llm.invoke(
+            [
+                SystemMessage(content=LAYER1_SYSTEM_PROMPT),
+                HumanMessage(content=human),
+            ]
+        )
+    except Exception as exc:
+        try:
+            from agentic_rag.telemetry.audit_log import audit_record, get_audit_session_id
+
+            audit_record(
+                "layer1_plan_error",
+                session_id=get_audit_session_id(),
+                payload={"error_type": type(exc).__name__, "error": str(exc)[:2000]},
+            )
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"第一层规划调用 DeepSeek 失败（{type(exc).__name__}）：{exc}"
+        ) from exc
+
     raw_text = msg.content if isinstance(msg.content, str) else str(msg.content)
     data = _extract_json_object(raw_text)
 
     doc_raw = data.get("document_path")
     doc_cli = data.get("document_from_cli")
     path_candidate = None
-    if cli_document_path:
-        path_candidate = str(cli_document_path).strip() or None
+    if cli_path:
+        path_candidate = cli_path
     elif isinstance(doc_cli, str) and doc_cli.strip():
-        path_candidate = doc_cli.strip().strip('"')
+        path_candidate = _coerce_document_path(doc_cli.strip().strip('"'))
     elif isinstance(doc_raw, str) and doc_raw.strip():
-        path_candidate = doc_raw.strip().strip('"')
+        path_candidate = _coerce_document_path(doc_raw.strip().strip('"'))
 
     pipelines = data.get("suggested_pipelines") or []
     if not isinstance(pipelines, list):
@@ -242,7 +300,7 @@ def run_layer1_session_plan(
 
 def resolve_document_path(plan: SessionPlan) -> Path | None:
     """将第一层给出的路径解析为 Path；不存在则返回 None。"""
-    if not plan.document_path:
+    if not plan.document_path or not looks_like_document_path(plan.document_path):
         return None
     p = Path(plan.document_path).expanduser().resolve()
     if p.is_file():
@@ -255,6 +313,7 @@ def compose_layer2_user_message(
     user_original: str,
     plan: SessionPlan,
     orchestration_addon: str | None = None,
+    retrieval_scope_note: str | None = None,
     use_knowledge_base: bool = True,
     kb_execution_notes: str | None = None,
     enable_c4_tools: bool = True,
@@ -267,6 +326,12 @@ def compose_layer2_user_message(
             "\n【编排系统备注（第三层或调度器注入，请一并执行）】\n"
             f"{orchestration_addon.strip()}\n"
         )
+    scope_block = ""
+    if retrieval_scope_note and str(retrieval_scope_note).strip():
+        scope_block = (
+            "\n【系统侧·检索范围（说明文字，不是文件路径）】\n"
+            f"{str(retrieval_scope_note).strip()}\n"
+        )
     scope_hint = (
         "请基于工程 Chroma 全库知识库检索结果作答，"
         if use_knowledge_base
@@ -276,12 +341,18 @@ def compose_layer2_user_message(
 
     parsed_block = format_c4_parsed_input_block(plan) if enable_c4_tools else ""
     web_line = ""
-    if enable_c4_tools and firecrawl_configured():
-        if plan.needs_web_tools or plan.web_urls:
+    if enable_c4_tools and (plan.needs_web_tools or plan.web_urls):
+        if firecrawl_configured():
             web_line = (
                 "用户问题涉及网页：请对【系统解析到的链接】或 plan 中的 URL 调用 "
                 "topic4_firecrawl_scrape（每条链接一次）；无 URL 时可 topic4_firecrawl_search。"
                 "输出 JSON 含 schema_version=topic4.tool.v1。\n"
+            )
+        else:
+            web_line = (
+                "第一层要求网页能力，但 **FIRECRAWL_API_KEY 未配置**。"
+                "禁止用 topic4_shell_exec / curl 代替 Firecrawl；"
+                "请基于知识库已有内容作答，并说明当前环境无法联网抓取。\n"
             )
     if enable_c4_tools:
         tool_hint = (
@@ -313,7 +384,8 @@ def compose_layer2_user_message(
         f"- 建议管线（可参考）：{pipes}\n"
         f"- 给执行层的提示：{plan.plan_for_layer2 or '按任务摘要调用 Topic4 工具完成'}\n"
         f"- 第一层说明：{plan.reasoning_brief or '无'}\n"
-        f"{addon}\n"
+        f"{addon}"
+        f"{scope_block}"
         "【用户原文】\n"
         f"{user_original.strip()}\n\n"
         f"{parsed_block}"

@@ -32,16 +32,27 @@ def _ensure_keys() -> None:
         )
 
 
-def build_deepseek_chat_model(*, temperature: float = 0.35):
+def build_deepseek_chat_model(
+    *,
+    temperature: float = 0.35,
+    request_timeout: float | None = None,
+):
     """DeepSeek OpenAI 兼容接口；需模型支持 tool calling。"""
     from langchain_openai import ChatOpenAI
 
     _ensure_keys()
+    timeout = (
+        config.DEEPSEEK_REQUEST_TIMEOUT_SEC
+        if request_timeout is None
+        else request_timeout
+    )
     return ChatOpenAI(
         model=config.DEEPSEEK_CHAT_MODEL or "deepseek-chat",
         api_key=config.DEEPSEEK_API_KEY,
         base_url=config.DEEPSEEK_BASE_URL or "https://api.deepseek.com",
         temperature=temperature,
+        timeout=timeout,
+        max_retries=2,
     )
 
 
@@ -222,9 +233,26 @@ def invoke_agent_once(
     user_text: str,
 ) -> dict[str, Any]:
     """单次 invoke，返回完整 state（含 messages）。"""
-    from langchain_core.messages import HumanMessage
+    from langchain_core.messages import AIMessage, HumanMessage
 
-    out = agent.invoke({"messages": [HumanMessage(content=user_text.strip())]})
+    try:
+        out = agent.invoke({"messages": [HumanMessage(content=user_text.strip())]})
+    except Exception as exc:
+        err_name = type(exc).__name__
+        if "Recursion" in err_name or "recursion" in str(exc).lower():
+            return {
+                "messages": [
+                    HumanMessage(content=user_text.strip()),
+                    AIMessage(
+                        content=(
+                            f"（第二层工具循环达到上限：{err_name}。"
+                            "请基于已有工具结果给出结论，勿再重复调用 shell/检索。）"
+                        )
+                    ),
+                ],
+                "invoke_error": str(exc),
+            }
+        raise
     return out if isinstance(out, dict) else {"result": out}
 
 

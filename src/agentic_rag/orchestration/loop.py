@@ -322,10 +322,22 @@ def _orchestrate_until_stable(
             planning_preamble = (
                 "\n\n".join(planning_preamble_parts) if planning_preamble_parts else None
             )
-            doc_bind = cli_documents_hint or (str(cli_doc) if cli_doc else None)
+            if cli_documents_hint and str(cli_documents_hint).strip():
+                scope_block = (
+                    "【系统侧·当前检索范围（说明文字，**不是**文件路径；"
+                    "document_path 应填 null 除非用户给出真实路径）】\n"
+                    f"{str(cli_documents_hint).strip()}\n"
+                )
+                planning_preamble = (
+                    f"{scope_block}\n\n{planning_preamble}"
+                    if planning_preamble
+                    else scope_block
+                )
+            cli_doc_path_for_l1 = str(cli_doc) if cli_doc else None
+            _fire("on_layer1_start")
             plan = run_layer1_session_plan(
                 planning_input,
-                cli_document_path=doc_bind,
+                cli_document_path=cli_doc_path_for_l1,
                 prior_context=accumulated_context if orch_round > 1 else None,
                 temperature=cfg.planner_temperature,
                 planning_preamble=planning_preamble,
@@ -389,6 +401,7 @@ def _orchestrate_until_stable(
             user_original=user_original,
             plan=plan,
             orchestration_addon=exec_addon,
+            retrieval_scope_note=cli_documents_hint,
             use_knowledge_base=(doc_resolved is None),
             kb_execution_notes=kb_notes,
             enable_c4_tools=cfg.enable_c4_tools,
@@ -459,9 +472,18 @@ def _orchestrate_until_stable(
             if verdict.verdict == "complete":
                 return agent, last_state, doc_resolved
             if verdict.verdict == "continue_execute":
-                exec_msg = (
+                hint = (
                     verdict.hint_for_next_execution
                     or "请结合上轮与用户目标改进答复，必要时再次调用检索工具。"
+                )
+                exec_msg = compose_layer2_user_message(
+                    user_original=user_original,
+                    plan=plan,
+                    orchestration_addon=hint,
+                    retrieval_scope_note=cli_documents_hint,
+                    use_knowledge_base=(doc_resolved is None),
+                    kb_execution_notes=kb_notes,
+                    enable_c4_tools=cfg.enable_c4_tools,
                 )
                 continue
             break

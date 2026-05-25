@@ -26,5 +26,7 @@ class OrchestrationHooks:
     """接收 ``JudgeVerdict``。"""
     on_round_start: Callable[[int], None] | None = None
     """外层编排轮次从 1 开始。"""
+    on_layer1_start: Callable[[], None] | None = None
+    """第一层 LLM 规划调用开始前（便于 UI / 审计区分「轮次开始」与「规划中」）。"""
     extend_agent_tools: Callable[[], list[Any]] | None = None
     """返回若干 LangChain 工具，在创建第二层 Agent 时与内置 Topic4 工具合并（每创建一次 Agent 调用一次）。"""

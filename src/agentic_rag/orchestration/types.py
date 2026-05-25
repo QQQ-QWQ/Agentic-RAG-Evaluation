@@ -53,6 +53,15 @@ class JudgeVerdict:
 
 def verdict_from_json(data: dict[str, Any]) -> JudgeVerdict:
     """容错解析模型 JSON。"""
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                data = item
+                break
+        else:
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
     v = str(data.get("verdict") or data.get("decision") or "complete").strip().lower()
     mapping: dict[str, VerdictCode] = {
         "complete": "complete",
