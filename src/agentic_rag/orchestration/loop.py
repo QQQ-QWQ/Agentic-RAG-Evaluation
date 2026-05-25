@@ -25,14 +25,63 @@ from agentic_rag.deep_planning.session_planner import (
     resolve_document_path,
     run_layer1_session_plan,
 )
+from agentic_rag.deep_planning.tool_quota import get_rag_session_quota
 from agentic_rag.orchestration.judge_layer import run_orchestration_judge
+from agentic_rag.orchestration.types import JudgeVerdict, OrchestrationConfig
 from agentic_rag.orchestration.planning_extensions import (
     PlanningEnrichInput,
     format_query_rewrite_block,
     kb_execution_notes_for_layer2,
 )
 from agentic_rag.orchestration.registry import OrchestrationHooks
-from agentic_rag.orchestration.types import OrchestrationConfig, JudgeVerdict
+from agentic_rag.deep_planning.tool_quota import reset_rag_tool_quota
+
+
+def _maybe_override_continue_execute(
+    verdict: JudgeVerdict,
+    *,
+    cfg: OrchestrationConfig,
+    kb_digest: dict | None,
+    attempt_idx: int,
+) -> JudgeVerdict:
+    """证据已对齐或会话 RAG 总配额用尽时，避免无意义 continue_execute。"""
+    if verdict.verdict != "continue_execute":
+        return verdict
+    session = get_rag_session_quota()
+    if session is not None and session.max_calls > 0 and session.count >= session.max_calls:
+        return JudgeVerdict(
+            verdict="complete",
+            summary_for_user=verdict.summary_for_user
+            or "检索调用已达本会话上限，请基于已有证据使用当前答复。",
+            hint_for_next_planner=None,
+            hint_for_next_execution=None,
+            reasoning_brief=(
+                (verdict.reasoning_brief or "")
+                + " [编排] rag_session_quota_exceeded → complete"
+            ).strip(),
+            raw={**(verdict.raw or {}), "override": "session_rag_quota"},
+        )
+    if not cfg.prefer_complete_when_grounded:
+        return verdict
+    if kb_digest and not kb_digest.get("skipped"):
+        grounded = bool(kb_digest.get("grounded"))
+        try:
+            conf = float(kb_digest.get("confidence") or 0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        if grounded and conf >= 0.75 and attempt_idx >= 1:
+            return JudgeVerdict(
+                verdict="complete",
+                summary_for_user=verdict.summary_for_user or "证据已对齐，结束本轮编排。",
+                hint_for_next_planner=None,
+                hint_for_next_execution=None,
+                reasoning_brief=(
+                    (verdict.reasoning_brief or "")
+                    + " [编排] grounded+retry_cap → complete"
+                ).strip(),
+                raw={**(verdict.raw or {}), "override": "grounded_prefer_complete"},
+            )
+    return verdict
 
 
 def _plan_digest(plan: SessionPlan) -> str:
@@ -268,9 +317,14 @@ def _orchestrate_until_stable(
     prior_conv = (prior_conversation or "").strip()
     prior_conv_injected = False
 
+    from agentic_rag.deep_planning.tool_quota import reset_rag_session_quota
+
+    reset_rag_session_quota(max_total_calls=cfg.max_total_rag_calls)
+
     orch_round = 0
     while orch_round < cfg.max_orchestration_rounds:
         orch_round += 1
+        reset_rag_tool_quota(max_calls=cfg.max_rag_tool_calls_per_round)
         _fire("on_round_start", orch_round)
 
         if skip_layer1 and orch_round == 1:
@@ -393,6 +447,7 @@ def _orchestrate_until_stable(
                 temperature=temperature,
                 sandbox_workspace=sandbox_ws,
                 enable_c4_tools=cfg.enable_c4_tools,
+                use_rag_subagent_tools=cfg.use_rag_subagent_tools,
                 additional_tools=extra_agent_tools if extra_agent_tools else None,
             )
 
@@ -417,6 +472,7 @@ def _orchestrate_until_stable(
 
         verdict: JudgeVerdict | None = None
         for attempt_idx in range(cfg.max_execute_retries_per_round):
+            reset_rag_tool_quota(max_calls=cfg.max_rag_tool_calls_per_round)
             if attempt_idx > 0:
                 print(
                     "\n[编排] 第三层判定「继续执行」，正在开始第二层第 "
@@ -503,6 +559,12 @@ def _orchestrate_until_stable(
                 orchestration_round=orch_round,
                 temperature=cfg.judge_temperature,
                 kb_grounding=kb_digest,
+            )
+            verdict = _maybe_override_continue_execute(
+                verdict,
+                cfg=cfg,
+                kb_digest=kb_digest,
+                attempt_idx=attempt_idx,
             )
             _fire("on_judge", verdict)
             print("\n--- 第三层研判 ---\n")

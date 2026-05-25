@@ -2017,3 +2017,121 @@ Q007, Q008, Q009, Q012, Q013, Q020, Q023, Q027, Q029
    - 工具型任务应进入 C4。
 
 4. 李金航后续进入 C4 时，优先用 Q013、Q016-Q019 验证工具调用能否弥补 C3 在表格、计算和代码执行任务上的局限。
+
+## 2026-05-25 C3 主测试集 main_20 正式评测（编排 + LLM Judge）
+
+记录人：李金航
+
+阶段：C3 Agentic Retrieval — 主测试集 `questions.csv`（Q001–Q020）正式批量与答案质量评测。
+
+对应任务：在修复子 Agent 闭包、ToolMessage 兼容、GBK 控制台与编排配额重置后，完整复跑 C3 main_20，形成可复现正式记录与 LLM 辅助判分。
+
+### run_id 与配置
+
+```text
+run_id：c3_main_20_formal_20260525
+config：C3（enable_c4_tools=false，use_rag_subagent_tools=true）
+测试集版本：data/testset/questions.csv（main_20，20 题）
+知识库版本：documents.csv sha256 c5273ca1…；chunks.jsonl sha256 90ab25d9…（见 batch_report.run_environment）
+Prompt 版本：默认 Topic4 编排 + 子 Agent 提示（planning_rewrite=false）
+模型：DeepSeek + Ark embedding（与 batch 运行时 .env 一致）
+git：eba24c0（工作区有未提交修复，含 tool_invoke_compat、tool_quota、streaming_hooks 等）
+```
+
+### 运行命令
+
+```powershell
+cd E:\Agentic-RAG-Evaluation-1
+$env:PYTHONIOENCODING = 'utf-8'
+uv run python run_c34_batch_eval.py --tier c3 --split main_20
+uv run python run_score_rag_multidim.py --results runs/results/c3_main_20_results.csv --out runs/results/c3_main_20_llm_judged.csv
+```
+
+正式跑前将旧 `run_logs.jsonl` 备份为 `run_logs_pre_formal_20260525_213754.jsonl.bak`，清空后仅保留本轮 20 行，避免与历史失败 run 混杂。
+
+### 输入数据
+
+```text
+data/testset/questions.csv
+data/testset/references.csv
+工程 Chroma 全库（与 main.py kb sync 口径一致）
+```
+
+### 输出文件
+
+| 路径 | 说明 |
+|------|------|
+| `runs/results/c3_main_20_results.csv` | 正式结果表（答案、引用、gold 覆盖、rag 统计） |
+| `runs/results/c3_main_20_llm_judged.csv` | LLM 四维 + weighted 判分 |
+| `runs/logs/c3_agentic_retrieval_batch/batch_report.json` | 完整 JSON（含 events、run_environment） |
+| `runs/logs/c3_agentic_retrieval_batch/run_logs.jsonl` | 本轮 20 行 JSONL |
+| `runs/logs/c3_agentic_retrieval_batch/FORMAL_main_20_2026-05-25.md` | 正式记录摘要（本批） |
+| `runs/logs/c3_agentic_retrieval_batch/formal_main_20_console.log` | 终端输出 |
+| `runs/logs/audit/sessions/<session_id>/trace.jsonl` | 每题 audit |
+
+### 主要结果（编排层）
+
+| 指标 | 值 |
+|------|-----|
+| 成功 ok | **20/20（100%）** |
+| stop_reason | 均为 complete |
+| 总耗时 | 约 **42 分钟** |
+| gold_doc_coverage 均值 | **85.9%** |
+| gold_chunk_coverage 均值 | **52.0%** |
+| doc 覆盖 &lt; 50% | Q007、Q016、Q020 |
+
+耗时 Top5：Q013（717s，58 次 rag）、Q014（648s，44 次）、Q008（182s）、Q012（165s）、Q010（137s）。
+
+### 主要结果（LLM 多维 Judge，辅助，非人工终评）
+
+| 指标 | 值 |
+|------|-----|
+| `llm_judge_weighted_score` 均值 | **0.850** |
+| 中位数 | **0.938** |
+| weighted ≥ 0.875 | **16/20** |
+| weighted &lt; 0.625 | **2/20**（Q007、Q016） |
+
+薄弱题摘要：
+
+- **Q007**（0.25，wrong_answer）：推荐 LangChain/LlamaIndex/Ragas 等，未对齐参考答案要求的 Dify、RAGFlow、CrewAI、LangGraph。
+- **Q016**（0.25，over_refusal）：`rag_eval_results.csv` 未入库，第一层 `needs_retrieval_tools=false`，未计算指标差异。
+- **Q013**（0.625，incomplete_answer）：论文类型归纳为 3 类，与参考答案 4 类不完全一致。
+- **Q017**（0.625，incomplete_answer）：仅列出 API、Fetcher，缺第三种获取方式（如 urllib 直链）。
+
+**口径**：`ok=20/20` 只表示三层编排无程序异常；答案质量以 Judge / 人工评分为准。
+
+### 与修复前 batch 对比（同 split main_20）
+
+| 问题 | 修复前 | 本轮 |
+|------|--------|------|
+| GBK 控制台 emoji | 20 题 0ms 失败 | 无 |
+| 工具包装闭包 | 子 Agent 实际走 project_default | audit 中 c0/c1/c2 pipeline 正确 |
+| LangGraph `unexpected type: str` | Q008–Q015 等失败 | 无 |
+| 编排成功率 | 14/20 | **20/20** |
+
+相关修复：`tool_invoke_compat.py`、`tool_quota.py`、`tool_audit.py` 闭包绑定、`orchestration/loop.py` 配额重置；单测 `tests/test_rag_subagent_tools.py`。
+
+### 遇到问题
+
+1. **Q016**：评测 CSV 不在 Chroma，C3 无本地读表工具，只能拒答或要求用户粘贴。
+2. **Q007**：多轮检索仍偏向 LangChain/LlamaIndex 文档，gold doc 覆盖仅 25%。
+3. **Q013/Q014**：表格归纳题 rag 调用与延迟极高（40–58 次），成本需写入失败/边界案例。
+4. **工作区未提交**：正式 run 的 git 状态为 dirty，复现需对齐当日修复文件。
+
+### 失败类型（答案层，非程序失败）
+
+```text
+wrong_answer：Q007
+over_refusal：Q016
+incomplete_answer：Q013、Q017
+```
+
+### 下一步
+
+1. 将 `rag_eval_results.csv` 入库或启用 C4 `topic4_table_analyzer`，复测 Q016、Q019。
+2. 唐宁按 `manual_eval_c3_formal.csv` 对 Q001–Q020 做人工复核（可与本轮 LLM judge 对照）。
+3. 赵启行汇总时区分「编排成功率」与「答案正确率」，勿将 20/20 ok 等同于答案全对。
+4. 李金航后续跑 C4 `--split c4_tools` 或 `main_20`，验证工具能否弥补 Q013/Q016/Q017。
+5. 可选：对 Q013/Q014 收紧 `max_rag_tool_calls_per_round` 或编排轮次，做延迟消融。
+
+详细逐题表见：`runs/logs/c3_agentic_retrieval_batch/FORMAL_main_20_2026-05-25.md`。

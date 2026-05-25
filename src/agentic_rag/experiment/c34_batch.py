@@ -23,6 +23,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 from agentic_rag import config as app_config
+from agentic_rag.deep_planning.presets import run_profile_for_preset
+from agentic_rag.experiment.runner import run_knowledge_base_rag
+from agentic_rag.orchestration.route_policy import (
+    RouteDecision,
+    apply_route_to_orchestration,
+    resolve_route,
+)
 from agentic_rag.orchestration.types import OrchestrationConfig
 from agentic_rag.runtime.engine.query_engine import QueryEngine, QueryEngineConfig
 from agentic_rag.runtime.types import RuntimeEvent
@@ -32,9 +39,10 @@ from agentic_rag.telemetry.streaming_hooks import (
     format_runtime_event_line,
     hooks_with_runtime_events,
     merge_orchestration_hooks,
+    safe_print_console,
 )
 
-SplitName = Literal["c3_smoke", "c4_tools", "main_20", "ids"]
+SplitName = Literal["c3_smoke", "c4_tools", "main_20", "ids", "bank"]
 
 C3_SMOKE_IDS: tuple[str, ...] = tuple(f"Q{i:03d}" for i in range(21, 31))
 C4_TOOL_IDS: tuple[str, ...] = ("Q013", "Q016", "Q017", "Q018", "Q019")
@@ -61,6 +69,7 @@ class C34BatchTaskResult:
     latency_ms: int
     tier: str
     session_id: str = ""
+    run_index: int = 1
     events: list[dict[str, Any]] = field(default_factory=list)
     error: str = ""
 
@@ -120,6 +129,13 @@ def resolve_batch_tasks(
     elif split == "main_20":
         path = questions_csv or (testset / "questions.csv")
         tasks = _read_questions_csv(path)
+    elif split == "bank":
+        if questions_csv is None or not questions_csv.is_file():
+            raise ValueError("split=bank 必须通过 --questions-csv 指定题库 CSV")
+        tasks = _read_questions_csv(questions_csv)
+        if question_ids:
+            ids = {x.strip() for x in question_ids if x.strip()}
+            tasks = [t for t in tasks if t.question_id in ids]
     elif split == "ids":
         ids = {x.strip() for x in (question_ids or []) if x.strip()}
         if not ids:
@@ -152,17 +168,25 @@ def _orchestration_for_tier(
     enable_planning_rewrite: bool,
     max_orchestration_rounds: int | None,
     max_execute_retries_per_round: int | None,
+    use_rag_subagent_tools: bool | None = None,
+    max_rag_tool_calls_per_round: int | None = None,
+    enable_adaptive_routing: bool = True,
 ) -> OrchestrationConfig:
     enable_c4 = tier == "c4"
     config = OrchestrationConfig(
         enable_c4_tools=enable_c4,
         enable_sandbox_tools=enable_c4 and enable_sandbox,
         enable_planning_query_rewrite=enable_planning_rewrite,
+        enable_adaptive_routing=enable_adaptive_routing,
     )
+    if use_rag_subagent_tools is not None:
+        config.use_rag_subagent_tools = bool(use_rag_subagent_tools)
     if max_orchestration_rounds is not None:
         config.max_orchestration_rounds = max(1, int(max_orchestration_rounds))
     if max_execute_retries_per_round is not None:
         config.max_execute_retries_per_round = max(1, int(max_execute_retries_per_round))
+    if max_rag_tool_calls_per_round is not None:
+        config.max_rag_tool_calls_per_round = max(0, int(max_rag_tool_calls_per_round))
     return config
 
 
@@ -204,6 +228,9 @@ C34_RESULT_FIELDS = [
     "answer",
     "citations",
     "log_path",
+    "execution_route",
+    "route_reason",
+    "rag_pipeline_preset",
 ]
 
 
@@ -377,6 +404,7 @@ def _trace_path(session_id: str) -> str:
 def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
     plan_payload: dict[str, Any] = {}
     rag_events: list[dict[str, Any]] = []
+    tool_counts: dict[str, int] = {}
     for row in rows:
         event = str(row.get("event") or "")
         payload = row.get("payload")
@@ -384,6 +412,10 @@ def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
             plan_payload = payload
         if event == "rag_query_result" and isinstance(payload, dict):
             rag_events.append(payload)
+        if event == "tool_invoke_start" and isinstance(payload, dict):
+            tname = str(payload.get("tool") or payload.get("name") or "").strip()
+            if tname:
+                tool_counts[tname] = tool_counts.get(tname, 0) + 1
 
     pipelines: list[str] = []
     doc_ids: list[str] = []
@@ -411,6 +443,7 @@ def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "needs_retrieval_tools": plan_payload.get("needs_retrieval_tools", ""),
         "suggested_pipelines": _unique([str(x) for x in plan_payload.get("suggested_pipelines") or []]),
         "rag_query_count": len(rag_events),
+        "tool_invoke_counts": tool_counts,
         "pipeline_mentions": _unique(pipelines),
         "retrieved_doc_ids": _unique(doc_ids),
         "retrieved_chunk_ids": _unique(chunk_ids),
@@ -425,6 +458,7 @@ def _formal_result_row(
     reference: dict[str, str] | None,
     planning_rewrite_enabled: bool,
     answer: str,
+    route: RouteDecision | None = None,
 ) -> dict[str, Any]:
     trace = _summarize_trace(_load_trace_rows(row.session_id))
     gold_doc_ids = _split_ids((reference or {}).get("evidence_doc_id", ""))
@@ -469,6 +503,140 @@ def _formal_result_row(
         "answer": answer,
         "citations": _json_cell(final_citation_chunk_ids or trace["citations"]),
         "log_path": _trace_path(row.session_id),
+        "execution_route": route.mode if route else "c3_orchestrated",
+        "route_reason": route.reason if route else "",
+        "rag_pipeline_preset": route.rag_preset if route else "",
+    }
+
+
+def _chunks_from_kb_raw(raw: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
+    doc_ids: list[str] = []
+    chunk_ids: list[str] = []
+    for ch in raw.get("retrieved_chunks") or []:
+        if not isinstance(ch, dict):
+            continue
+        did = str(ch.get("doc_id") or "").strip()
+        cid = str(ch.get("chunk_id") or "").strip()
+        if did and did not in doc_ids:
+            doc_ids.append(did)
+        if cid:
+            chunk_ids.append(cid)
+    citations = _chunk_ids_from_citations(raw.get("citations") or [])
+    if not citations:
+        citations = chunk_ids[:]
+    return doc_ids, chunk_ids, citations
+
+
+def _run_c2_kb_task(
+    task: C34BatchTask,
+    route: RouteDecision,
+    *,
+    tier: str,
+    session_id: str,
+    run_index: int,
+) -> tuple[C34BatchTaskResult, dict[str, Any]]:
+    """单次全库 RAG（C0/C1/C2 预设），跳过三层编排。"""
+    profile = run_profile_for_preset(route.rag_preset)
+    profile.question_id = task.question_id
+    profile.save_jsonl_log = False
+    t0 = time.perf_counter()
+    raw = run_knowledge_base_rag(task.question, profile)
+    latency = int((time.perf_counter() - t0) * 1000)
+    err = str(raw.get("error") or "").strip()
+    answer = str(raw.get("answer") or "").strip()
+    if err and not answer:
+        answer = f"（检索失败：{err}）"
+    ok = bool(answer) and not err
+    doc_ids, chunk_ids, _ = _chunks_from_kb_raw(raw)
+    audit_log(
+        "c2_kb_batch_answer",
+        session_id=session_id,
+        payload={
+            "question_id": task.question_id,
+            "pipeline": route.rag_preset,
+            "route_reason": route.reason,
+            "latency_ms": latency,
+            "error": err or None,
+            "retrieved_doc_ids": doc_ids,
+            "retrieved_chunk_ids": chunk_ids,
+        },
+    )
+    row = C34BatchTaskResult(
+        question_id=task.question_id,
+        question=task.question,
+        ok=ok,
+        answer=answer,
+        stop_reason="complete" if ok else "error",
+        latency_ms=latency,
+        tier=tier,
+        session_id=session_id,
+        run_index=run_index,
+        events=[
+            {
+                "kind": "route",
+                "message": f"c2_kb preset={route.rag_preset}",
+                "payload": {"reason": route.reason},
+            }
+        ],
+        error=err,
+    )
+    return row, raw
+
+
+def _formal_row_for_c2_kb(
+    *,
+    task: C34BatchTask,
+    row: C34BatchTaskResult,
+    route: RouteDecision,
+    reference: dict[str, str] | None,
+    planning_rewrite_enabled: bool,
+    kb_raw: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """C2 轻路径结果行（使用单次 RAG 返回的 chunk 列表）。"""
+    if kb_raw:
+        doc_ids, chunk_ids, citations = _chunks_from_kb_raw(kb_raw)
+    else:
+        chunk_ids = _chunk_ids_in_text(row.answer)
+        doc_ids = _unique([c.split("::")[0] for c in chunk_ids if "::" in c])
+        citations = chunk_ids
+    gold_doc_ids = _split_ids((reference or {}).get("evidence_doc_id") or "")
+    gold_chunk_ids = _split_ids((reference or {}).get("evidence_chunk_id") or "")
+    gold_doc_covered = sum(1 for d in gold_doc_ids if d in doc_ids)
+    gold_chunk_covered = sum(1 for c in gold_chunk_ids if c in chunk_ids)
+    return {
+        "question_id": task.question_id,
+        "question": task.question,
+        "task_type": task.task_type,
+        "difficulty": task.difficulty,
+        "ok": row.ok,
+        "error": row.error,
+        "stop_reason": row.stop_reason,
+        "latency_ms": row.latency_ms,
+        "planning_rewrite_enabled": planning_rewrite_enabled,
+        "plan_generated": False,
+        "needs_retrieval_tools": True,
+        "suggested_pipelines": _json_cell([route.rag_preset]),
+        "rag_query_count": 1 if row.ok else 0,
+        "pipeline_mentions": _json_cell([route.rag_preset]),
+        "retrieved_doc_ids": _json_cell(doc_ids),
+        "retrieved_chunk_ids": _json_cell(chunk_ids),
+        "final_citation_chunk_ids": _json_cell(citations),
+        "gold_doc_count": len(gold_doc_ids),
+        "gold_doc_covered": gold_doc_covered,
+        "gold_doc_coverage": round(gold_doc_covered / len(gold_doc_ids), 4)
+        if gold_doc_ids
+        else "",
+        "gold_chunk_count": len(gold_chunk_ids),
+        "gold_chunk_covered": gold_chunk_covered,
+        "gold_chunk_coverage": round(gold_chunk_covered / len(gold_chunk_ids), 4)
+        if gold_chunk_ids
+        else "",
+        "answer": row.answer,
+        "citations": _json_cell(citations),
+        "log_path": _trace_path(row.session_id),
+        "execution_route": route.mode,
+        "route_reason": route.reason,
+        "rag_pipeline_preset": route.rag_preset,
     }
 
 
@@ -479,10 +647,14 @@ def run_c34_batch(
     question_ids: list[str] | None = None,
     questions_csv: Path | None = None,
     limit: int | None = None,
+    repeat: int = 1,
     enable_sandbox: bool = False,
     enable_planning_rewrite: bool = False,
     max_orchestration_rounds: int | None = None,
     max_execute_retries_per_round: int | None = None,
+    use_rag_subagent_tools: bool | None = None,
+    max_rag_tool_calls_per_round: int | None = None,
+    enable_adaptive_routing: bool = True,
     log_dir: Path | None = None,
     continue_on_error: bool = True,
     stream_events_to_stdout: bool = False,
@@ -504,13 +676,17 @@ def run_c34_batch(
         raise SystemExit(f"未解析到题目（split={split}）")
 
     references = _read_references(split)
-    orch = _orchestration_for_tier(
+    orch_base = _orchestration_for_tier(
         tier,
         enable_sandbox=enable_sandbox,
         enable_planning_rewrite=enable_planning_rewrite,
         max_orchestration_rounds=max_orchestration_rounds,
         max_execute_retries_per_round=max_execute_retries_per_round,
+        use_rag_subagent_tools=use_rag_subagent_tools,
+        max_rag_tool_calls_per_round=max_rag_tool_calls_per_round,
+        enable_adaptive_routing=enable_adaptive_routing,
     )
+    repeat_n = max(1, int(repeat))
     out_dir = log_dir or _default_log_dir(tier)
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = out_dir / "run_logs.jsonl"
@@ -539,10 +715,19 @@ def run_c34_batch(
             "planning_rewrite_enabled": enable_planning_rewrite,
             "max_orchestration_rounds": orch.max_orchestration_rounds,
             "max_execute_retries_per_round": orch.max_execute_retries_per_round,
+            "use_rag_subagent_tools": orch.use_rag_subagent_tools,
+            "max_rag_tool_calls_per_round": orch_base.max_rag_tool_calls_per_round,
+            "enable_adaptive_routing": enable_adaptive_routing,
+            "repeat": repeat_n,
         },
     )
 
+    expanded: list[tuple[C34BatchTask, int]] = []
     for task in tasks:
+        for run_idx in range(1, repeat_n + 1):
+            expanded.append((task, run_idx))
+
+    for task, run_idx in expanded:
         sid = new_audit_session_id()
         set_audit_session_id(sid)
         events_dump: list[dict[str, Any]] = []
@@ -556,52 +741,103 @@ def run_c34_batch(
             }
             events_dump.append(row)
             if stream_events_to_stdout:
-                print(f"  [{task.question_id}] {format_runtime_event_line(ev)}")
+                tag = task.question_id
+                if repeat_n > 1:
+                    tag = f"{tag}#{run_idx}"
+                safe_print_console(f"  [{tag}] {format_runtime_event_line(ev)}")
 
-        audit_hooks = build_client_audit_hooks(tier=tier, session_id=sid)
-        hooks = hooks_with_runtime_events(
-            merge_orchestration_hooks(audit_hooks),
-            on_event,
+        route = resolve_route(
+            task_type=task.task_type,
+            difficulty=task.difficulty,
+            expected_path=task.expected_path,
+            required_tool=task.required_tool,
             tier=tier,
+            enable_adaptive_routing=enable_adaptive_routing,
         )
-
-        engine = QueryEngine(
-            config=QueryEngineConfig(
-                orchestration=orch,
-                hooks=hooks,
-                temperature=0.35,
-            ),
-        )
+        if stream_events_to_stdout:
+            safe_print_console(
+                f"  [{task.question_id}] route={route.mode} "
+                f"preset={route.rag_preset} ({route.reason})"
+            )
 
         try:
-            result = engine.submit_message(task.question, on_event=on_event)
-            latency = int((time.perf_counter() - t0) * 1000)
-            answer = (
-                _extract_last_assistant_from_state(result.raw_state)
-                or result.assistant_text
-                or result.transcript
-                or ""
-            )
-            row = C34BatchTaskResult(
-                question_id=task.question_id,
-                question=task.question,
-                ok=result.stop_reason not in ("error", "aborted"),
-                answer=answer,
-                stop_reason=result.stop_reason,
-                latency_ms=latency,
-                tier=tier,
-                session_id=sid,
-                events=events_dump,
-            )
-            log_turn_result(
-                user_text=task.question,
-                stop_reason=result.stop_reason,
-                latency_ms=latency,
-                transcript_len=len(row.answer),
-                assistant_text=row.answer,
-                tier=tier,
-                session_id=sid,
-            )
+            kb_raw: dict[str, Any] = {}
+            if route.mode == "c2_kb":
+                row, kb_raw = _run_c2_kb_task(
+                    task,
+                    route,
+                    tier=tier,
+                    session_id=sid,
+                    run_index=run_idx,
+                )
+                events_dump.extend(row.events)
+            else:
+                orch = OrchestrationConfig(
+                    enable_c4_tools=orch_base.enable_c4_tools,
+                    enable_sandbox_tools=orch_base.enable_sandbox_tools,
+                    enable_planning_query_rewrite=orch_base.enable_planning_query_rewrite,
+                    enable_kb_inventory_hints=orch_base.enable_kb_inventory_hints,
+                    use_rag_subagent_tools=orch_base.use_rag_subagent_tools,
+                    enable_adaptive_routing=orch_base.enable_adaptive_routing,
+                    max_orchestration_rounds=orch_base.max_orchestration_rounds,
+                    max_execute_retries_per_round=orch_base.max_execute_retries_per_round,
+                    max_rag_tool_calls_per_round=orch_base.max_rag_tool_calls_per_round,
+                    prefer_complete_when_grounded=orch_base.prefer_complete_when_grounded,
+                )
+                apply_route_to_orchestration(orch, route, tier=tier)
+                if max_orchestration_rounds is not None:
+                    orch.max_orchestration_rounds = max(1, int(max_orchestration_rounds))
+                if max_execute_retries_per_round is not None:
+                    orch.max_execute_retries_per_round = max(
+                        1, int(max_execute_retries_per_round)
+                    )
+                if max_rag_tool_calls_per_round is not None:
+                    orch.max_rag_tool_calls_per_round = max(
+                        0, int(max_rag_tool_calls_per_round)
+                    )
+
+                audit_hooks = build_client_audit_hooks(tier=tier, session_id=sid)
+                hooks = hooks_with_runtime_events(
+                    merge_orchestration_hooks(audit_hooks),
+                    on_event,
+                    tier=tier,
+                )
+                engine = QueryEngine(
+                    config=QueryEngineConfig(
+                        orchestration=orch,
+                        hooks=hooks,
+                        temperature=0.35,
+                    ),
+                )
+                result = engine.submit_message(task.question, on_event=on_event)
+                latency = int((time.perf_counter() - t0) * 1000)
+                answer = (
+                    _extract_last_assistant_from_state(result.raw_state)
+                    or result.assistant_text
+                    or result.transcript
+                    or ""
+                )
+                row = C34BatchTaskResult(
+                    question_id=task.question_id,
+                    question=task.question,
+                    ok=result.stop_reason not in ("error", "aborted"),
+                    answer=answer,
+                    stop_reason=result.stop_reason,
+                    latency_ms=latency,
+                    tier=tier,
+                    session_id=sid,
+                    run_index=run_idx,
+                    events=events_dump,
+                )
+                log_turn_result(
+                    user_text=task.question,
+                    stop_reason=result.stop_reason,
+                    latency_ms=latency,
+                    transcript_len=len(row.answer),
+                    assistant_text=row.answer,
+                    tier=tier,
+                    session_id=sid,
+                )
         except Exception as exc:
             latency = int((time.perf_counter() - t0) * 1000)
             row = C34BatchTaskResult(
@@ -613,6 +849,7 @@ def run_c34_batch(
                 latency_ms=latency,
                 tier=tier,
                 session_id=sid,
+                run_index=run_idx,
                 events=events_dump,
                 error=str(exc),
             )
@@ -630,22 +867,44 @@ def run_c34_batch(
             "required_tool": task.required_tool,
             "note": task.note,
             "planning_rewrite_enabled": enable_planning_rewrite,
-            "max_orchestration_rounds": orch.max_orchestration_rounds,
-            "max_execute_retries_per_round": orch.max_execute_retries_per_round,
+            "execution_route": route.mode,
+            "route_reason": route.reason,
+            "rag_pipeline_preset": route.rag_preset,
+            "run_index": run_idx,
         }
+        if route.mode != "c2_kb":
+            log_row["max_orchestration_rounds"] = orch.max_orchestration_rounds
+            log_row["max_execute_retries_per_round"] = orch.max_execute_retries_per_round
+            log_row["use_rag_subagent_tools"] = orch.use_rag_subagent_tools
+            log_row["max_rag_tool_calls_per_round"] = orch.max_rag_tool_calls_per_round
+            log_row["max_total_rag_calls"] = orch.max_total_rag_calls
         _append_jsonl(jsonl_path, log_row)
-        formal_rows.append(
-            _formal_result_row(
-                task=task,
-                row=row,
-                reference=references.get(task.question_id),
-                planning_rewrite_enabled=enable_planning_rewrite,
-                answer=row.answer,
+        if route.mode == "c2_kb":
+            formal_rows.append(
+                _formal_row_for_c2_kb(
+                    task=task,
+                    row=row,
+                    route=route,
+                    reference=references.get(task.question_id),
+                    planning_rewrite_enabled=enable_planning_rewrite,
+                    kb_raw=kb_raw,
+                )
             )
-        )
+        else:
+            formal_rows.append(
+                _formal_result_row(
+                    task=task,
+                    row=row,
+                    reference=references.get(task.question_id),
+                    planning_rewrite_enabled=enable_planning_rewrite,
+                    answer=row.answer,
+                    route=route,
+                )
+            )
         _write_result_csv(result_csv_path, formal_rows)
-        print(
-            f"[{tier}] {task.question_id} "
+        run_tag = f" run={run_idx}" if repeat_n > 1 else ""
+        safe_print_console(
+            f"[{tier}] {task.question_id}{run_tag} "
             f"{'OK' if row.ok else 'FAIL'} "
             f"{row.latency_ms}ms "
             f"session={sid}"
@@ -665,8 +924,9 @@ def run_c34_batch(
             "jsonl": str(jsonl_path),
             "result_csv": str(result_csv_path),
             "planning_rewrite_enabled": enable_planning_rewrite,
-            "max_orchestration_rounds": orch.max_orchestration_rounds,
-            "max_execute_retries_per_round": orch.max_execute_retries_per_round,
+            "max_orchestration_rounds": orch_base.max_orchestration_rounds,
+            "max_execute_retries_per_round": orch_base.max_execute_retries_per_round,
+            "enable_adaptive_routing": enable_adaptive_routing,
         },
     )
     return report

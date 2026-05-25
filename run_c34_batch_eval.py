@@ -21,9 +21,9 @@ def build_c34_batch_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--split",
-        choices=("c3_smoke", "c4_tools", "main_20", "ids"),
+        choices=("c3_smoke", "c4_tools", "main_20", "ids", "bank"),
         default="c3_smoke",
-        help="题目预设：c3_smoke(Q021-030) | c4_tools | main_20 | ids",
+        help="题目预设：c3_smoke | c4_tools | main_20 | ids | bank(需 --questions-csv)",
     )
     parser.add_argument(
         "--question-ids",
@@ -32,6 +32,12 @@ def build_c34_batch_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
     )
     parser.add_argument("--questions-csv", type=Path, default=None)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="每题重复跑 N 次（独立 session + audit trace），用于稳定性对比",
+    )
     parser.add_argument(
         "--sandbox",
         action="store_true",
@@ -65,6 +71,22 @@ def build_c34_batch_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
         action="store_true",
         help="每题打印编排事件行",
     )
+    parser.add_argument(
+        "--no-subagent-tools",
+        action="store_true",
+        help="禁用 rag_subagent_c0/c1/c2，回退 topic4_list + topic4_rag_query",
+    )
+    parser.add_argument(
+        "--max-rag-calls",
+        type=int,
+        default=None,
+        help="单轮第二层 RAG 类工具调用上限（默认 10）",
+    )
+    parser.add_argument(
+        "--no-adaptive-route",
+        action="store_true",
+        help="关闭按 expected_path/题型 的 C2 轻路径路由，全部走完整 C3/C4 编排",
+    )
     return parser
 
 
@@ -73,6 +95,9 @@ def main_from_args(args: argparse.Namespace) -> int:
     split = args.split
     if split == "ids" and not qids:
         print("split=ids 时必须提供 --question-ids", file=sys.stderr)
+        return 2
+    if split == "bank" and args.questions_csv is None:
+        print("split=bank 时必须提供 --questions-csv", file=sys.stderr)
         return 2
 
     from agentic_rag.experiment.c34_batch import run_c34_batch
@@ -87,9 +112,13 @@ def main_from_args(args: argparse.Namespace) -> int:
         enable_planning_rewrite=args.planning_rewrite,
         max_orchestration_rounds=args.max_orchestration_rounds,
         max_execute_retries_per_round=args.max_execute_retries_per_round,
+        repeat=args.repeat,
+        use_rag_subagent_tools=not args.no_subagent_tools,
+        max_rag_tool_calls_per_round=args.max_rag_calls,
         log_dir=args.log_dir,
         continue_on_error=not args.fail_fast,
         stream_events_to_stdout=args.verbose_events,
+        enable_adaptive_routing=not args.no_adaptive_route,
     )
     failed = [t for t in report.tasks if not t.ok]
     print(

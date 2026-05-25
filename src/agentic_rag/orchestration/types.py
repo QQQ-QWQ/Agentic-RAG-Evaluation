@@ -35,8 +35,16 @@ class OrchestrationConfig:
     """改写提示词；默认 ``<PROJECT_ROOT>/prompts/query_rewrite_prompt.md``（由调用方解析）。"""
     enable_kb_inventory_hints: bool = True
     """为 True 时在第二层消息中附加 ``documents.csv`` 登记状态（确定性事实，非模型猜测）。"""
-    enable_c4_tools: bool = False
-    """False = C3（仅 ``topic4_rag_query`` 等检索工具）；True = C4（入库、MarkItDown、可选沙箱）。"""
+    use_rag_subagent_tools: bool = True
+    """为 True 时第二层用 ``rag_subagent_c0/c1/c2`` 固定管线子 Agent，减少选参与 list 调用。"""
+    max_rag_tool_calls_per_round: int = 10
+    """单轮第二层执行中 RAG 类工具（含子 Agent）最大调用次数；0 表示不限制。"""
+    max_total_rag_calls: int = 0
+    """整次用户回合内 RAG 调用总上限；0 表示仅按每轮上限。"""
+    enable_adaptive_routing: bool = True
+    """批量/入口侧按题型与 expected_path 选择 C2 轻路径或 C3/C4 编排（见 route_policy）。"""
+    prefer_complete_when_grounded: bool = True
+    """第三层：证据已对齐且执行轮次已用尽一次时，倾向 complete 而非继续检索。"""
 
 
 @dataclass

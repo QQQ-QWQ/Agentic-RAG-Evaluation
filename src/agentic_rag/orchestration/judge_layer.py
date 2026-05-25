@@ -18,9 +18,11 @@ LAYER3_SYSTEM_PROMPT = """你是 Topic4【第三层：研判与调度】（Skill
 
 输入包含：用户目标、第一层规划摘要、第二层执行摘录（及可能的知识库对齐说明）。
 你的职责 ONLY：
-1. 判断当前执行是否已充分满足用户目标。
-2. 决定下一步：**结束**、**让第二层在同规划下继续改进**、**返回第一层重新规划**、或**需要用户补充信息**。
-3. 仅输出一个 JSON 对象，不要 Markdown 围栏。
+1. 判断当前执行是否已充分满足用户目标（以**答案是否正确、完整**为准，而非检索次数或索引覆盖）。
+2. 若摘录中的回答已直接回应用户问题且与证据一致，应 verdict=complete，不要为「再搜一轮」而 continue_execute。
+3. 仅当回答明显缺要点、引用与结论不符、或用户明确要求的数据/计算未完成时，才使用 continue_execute 或 replan。
+4. 决定下一步：**结束**、**让第二层在同规划下继续改进**、**返回第一层重新规划**、或**需要用户补充信息**。
+5. 仅输出一个 JSON 对象，不要 Markdown 围栏。
 
 JSON 字段：
 - "verdict": 必须是下列之一字符串：
@@ -57,7 +59,8 @@ def run_orchestration_judge(
             f"grounded={kb_grounding.get('grounded')} "
             f"confidence={kb_grounding.get('confidence')}\n"
             f"issues={kb_grounding.get('issues', '')}\n"
-            "若 grounded=false 且任务声称来自文档，应倾向 replan 或 continue_execute。\n"
+            "若 grounded=true 且 confidence≥0.75，且执行摘录已给出明确结论，应倾向 complete。\n"
+            "若 grounded=false 且任务声称来自文档，应倾向 replan 或 continue_execute（但勿因「想更全」而无缺口地继续）。\n"
         )
     human = (
         f"编排轮次：{orchestration_round}\n\n"
