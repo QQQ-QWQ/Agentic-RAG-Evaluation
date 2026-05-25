@@ -81,6 +81,15 @@ def run_kb_grounding_check(
             "parse_error": True,
             "raw": raw[:800],
         }
+    if isinstance(payload, list):
+        for item in payload:
+            if isinstance(item, dict):
+                payload = item
+                break
+        else:
+            payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
     grounded = bool(payload.get("grounded", False))
     try:
         confidence = float(payload.get("confidence", 0.0))

@@ -25,6 +25,7 @@ def run_orchestration_turn(
     hooks: OrchestrationHooks | None = None,
     reuse_agent: Any | None = None,
     reuse_doc_path: Path | None = None,
+    prior_conversation: str | None = None,
     temperature: float = 0.35,
     trace: TraceCollector | None = None,
     on_event: Callable[[RuntimeEvent], None] | None = None,
@@ -69,9 +70,10 @@ def run_orchestration_turn(
                     cli_documents_hint=cli_documents_hint,
                     hooks=hooks,
                     config=config,
-                    reuse_agent=reuse_agent,
-                    reuse_doc_path=reuse_doc_path,
-                    temperature=temperature,
+            reuse_agent=reuse_agent,
+            reuse_doc_path=reuse_doc_path,
+            prior_conversation=prior_conversation,
+            temperature=temperature,
                 )
                 raw_state = {
                     "agent": agent,

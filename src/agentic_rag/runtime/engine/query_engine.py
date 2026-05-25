@@ -90,6 +90,12 @@ class QueryEngine:
         self._turn += 1
         self._trace.mark("submit_message", turn=self._turn)
 
+        from agentic_rag.orchestration.conversation_context import (
+            format_prior_conversation,
+        )
+
+        prior = format_prior_conversation(st.messages_log)
+
         def abort_check() -> bool:
             return self._abort
 
@@ -102,6 +108,7 @@ class QueryEngine:
             hooks=self.config.hooks,
             reuse_agent=self._agent,
             reuse_doc_path=self._doc_resolved,
+            prior_conversation=prior or None,
             temperature=self.config.temperature,
             trace=self._trace,
             on_event=on_event,

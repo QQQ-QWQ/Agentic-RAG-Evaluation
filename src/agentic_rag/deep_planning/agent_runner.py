@@ -208,35 +208,89 @@ def build_topic4_deep_agent(
     )
 
 
+def _ai_message_text(message: Any) -> str:
+    from langchain_core.messages import AIMessage
+
+    if not isinstance(message, AIMessage):
+        return ""
+    c = message.content
+    if isinstance(c, str):
+        return c.strip()
+    if isinstance(c, list):
+        parts: list[str] = []
+        for block in c:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text") or ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts).strip()
+    return ""
+
+
 def last_ai_text(messages: list[Any]) -> str:
     """从消息列表中取最后一条 AI 文本。"""
     from langchain_core.messages import AIMessage
 
     for m in reversed(messages):
         if isinstance(m, AIMessage):
-            c = m.content
-            if isinstance(c, str):
-                return c
-            if isinstance(c, list):
-                parts = []
-                for block in c:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        parts.append(block.get("text", ""))
-                    elif isinstance(block, str):
-                        parts.append(block)
-                return "\n".join(parts)
+            t = _ai_message_text(m)
+            if t:
+                return t
     return ""
+
+
+def collect_ai_reply_text(
+    messages: list[Any] | None,
+    *,
+    max_chars: int = 120_000,
+) -> str:
+    """合并本轮所有 AI 文本；避免仅取最后一条短摘要而丢失长答复。"""
+    from langchain_core.messages import AIMessage
+
+    if not messages:
+        return ""
+    segments: list[str] = []
+    for m in messages:
+        if isinstance(m, AIMessage):
+            t = _ai_message_text(m)
+            if t and (not segments or t != segments[-1]):
+                segments.append(t)
+    if not segments:
+        return ""
+    if len(segments) == 1:
+        out = segments[0]
+    else:
+        last = segments[-1]
+        longest = max(segments, key=len)
+        if len(last) < 800 and len(longest) > len(last) * 2:
+            body = "\n\n---\n\n".join(segments[:-1])
+            out = f"{body}\n\n---\n\n{last}".strip()
+        else:
+            out = "\n\n---\n\n".join(segments[-3:])
+    if len(out) > max_chars:
+        return out[: max_chars - 24] + "\n…(答复已截断)"
+    return out
 
 
 def invoke_agent_once(
     agent,
     user_text: str,
+    *,
+    prior_conversation: str | None = None,
 ) -> dict[str, Any]:
     """单次 invoke，返回完整 state（含 messages）。"""
     from langchain_core.messages import AIMessage, HumanMessage
 
+    body = user_text.strip()
+    prior = (prior_conversation or "").strip()
+    if prior:
+        body = (
+            f"{body}\n\n"
+            "【系统侧·此前会话（供延续上下文，勿重复已完成的整段输出）】\n"
+            f"{prior[:16000]}"
+        )
     try:
-        out = agent.invoke({"messages": [HumanMessage(content=user_text.strip())]})
+        out = agent.invoke({"messages": [HumanMessage(content=body)]})
     except Exception as exc:
         err_name = type(exc).__name__
         if "Recursion" in err_name or "recursion" in str(exc).lower():
@@ -261,5 +315,5 @@ def format_agent_print(final_state: dict[str, Any]) -> str:
     msgs = final_state.get("messages") or []
     if not isinstance(msgs, list):
         return str(final_state)
-    text = last_ai_text(msgs)
+    text = collect_ai_reply_text(msgs)
     return text if text.strip() else repr(final_state)

@@ -70,9 +70,13 @@ def _compact_rag_result(
     evidence_max_chars: int = 8000,
 ) -> str:
     """压缩传给模型的工具输出；附带 evidence_excerpt 供对齐核验。"""
+    rp = raw.get("run_profile")
+    config_flag = raw.get("config")
+    if not config_flag and isinstance(rp, dict):
+        config_flag = rp.get("config_name")
     slim: dict[str, Any] = {
         "pipeline": pipeline,
-        "config_flag": raw.get("config") or raw.get("run_profile", {}).get("config_name"),
+        "config_flag": config_flag,
         "allowed_doc_ids": raw.get("allowed_doc_ids"),
         "retrieved_doc_ids": _retrieved_doc_ids(raw),
         "answer": raw.get("answer", ""),

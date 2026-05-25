@@ -252,6 +252,7 @@ def _orchestrate_until_stable(
     interactive_replan_prompt: bool,
     reuse_agent: Any | None = None,
     reuse_doc_path: Path | None = None,
+    prior_conversation: str | None = None,
 ) -> tuple[Any | None, dict[str, Any] | None, Path | None]:
     hk = hooks
 
@@ -264,6 +265,8 @@ def _orchestrate_until_stable(
     agent = reuse_agent
     doc_resolved: Path | None = reuse_doc_path or cli_doc
     last_state: dict[str, Any] | None = None
+    prior_conv = (prior_conversation or "").strip()
+    prior_conv_injected = False
 
     orch_round = 0
     while orch_round < cfg.max_orchestration_rounds:
@@ -286,6 +289,11 @@ def _orchestrate_until_stable(
             _fire("on_plan", plan)
         else:
             planning_input = user_original
+            if prior_conv and orch_round == 1 and not accumulated_context.strip():
+                accumulated_context = (
+                    "【此前会话（Gradio/CLI 已展示内容，供延续上下文）】\n"
+                    f"{prior_conv}\n"
+                )
             if accumulated_context.strip():
                 planning_input = (
                     f"{user_original}\n\n【编排系统·重规划上下文】\n{accumulated_context.strip()}"
@@ -415,9 +423,41 @@ def _orchestrate_until_stable(
                     f"{attempt_idx + 1}/{cfg.max_execute_retries_per_round} 次调用。\n"
                     "（Deep Agent 可能再次多次调用检索；完成前若终端暂无新标题属正常，并非卡死。）\n"
                 )
-            last_state = invoke_agent_once(agent, exec_msg)
+            prior_for_invoke = None if prior_conv_injected else prior_conv or None
+            last_state = invoke_agent_once(
+                agent,
+                exec_msg,
+                prior_conversation=prior_for_invoke,
+            )
+            if prior_for_invoke:
+                prior_conv_injected = True
             _fire("on_execute_state", last_state)
             transcript = format_agent_print(last_state)
+            # #region agent log
+            try:
+                import json
+                import time as _time
+
+                from agentic_rag import config as _cfg
+
+                _path = _cfg.PROJECT_ROOT / "debug-1b7e11.log"
+                _msgs = last_state.get("messages") if isinstance(last_state, dict) else []
+                _payload = {
+                    "sessionId": "1b7e11",
+                    "hypothesisId": "H5",
+                    "location": "loop.py",
+                    "message": "layer2_transcript",
+                    "data": {
+                        "transcript_chars": len(transcript or ""),
+                        "message_count": len(_msgs) if isinstance(_msgs, list) else 0,
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                }
+                with _path.open("a", encoding="utf-8") as _f:
+                    _f.write(json.dumps(_payload, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+            # #endregion
             print("\n--- 第二层回复 ---\n")
             print(transcript)
             print()
@@ -529,6 +569,7 @@ def orchestrate_user_turn(
     config: OrchestrationConfig | None = None,
     reuse_agent: Any | None = None,
     reuse_doc_path: Path | None = None,
+    prior_conversation: str | None = None,
     temperature: float = 0.35,
     hooks: OrchestrationHooks | None = None,
 ) -> tuple[Any | None, Path | None, dict[str, Any] | None]:
@@ -551,6 +592,7 @@ def orchestrate_user_turn(
         interactive_replan_prompt=False,
         reuse_agent=reuse_agent,
         reuse_doc_path=reuse_doc_path,
+        prior_conversation=prior_conversation,
     )
     return agent, doc_resolved, last_state
 

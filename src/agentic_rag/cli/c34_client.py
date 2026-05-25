@@ -441,7 +441,7 @@ def iter_c34_turn_stream(
         assert isinstance(err, Exception)
         progress.append(f"❌ {type(err).__name__}: {err}")
         yield agent, doc_resolved, _compose_streaming_reply(progress, ""), engine
-        raise err
+        return
 
     pack = result_box.get("ok")
     if not pack:
@@ -602,6 +602,7 @@ def run_c34_console_client(
 def launch_c34_gradio_client(
     *,
     host: str = "127.0.0.1",
+    port: int | None = None,
     default_enable_c4: bool = False,
     default_enable_sandbox: bool = False,
     default_retrieval_mode: str | None = None,
@@ -609,6 +610,14 @@ def launch_c34_gradio_client(
     resume_session_id: str | None = None,
 ) -> None:
     """浏览器客户端：选档位 → 开始会话 → 聊天。"""
+    from agentic_rag.cli.gradio_launch import (
+        DEFAULT_GRADIO_CLIENT_PORT,
+        DEFAULT_GRADIO_LOGS_PORT,
+        launch_topic4_gradio,
+        textbox_copy_button_kwargs,
+    )
+
+    listen_port = port if port is not None else DEFAULT_GRADIO_CLIENT_PORT
     _require_agent_group()
     import gradio as gr
 
@@ -700,8 +709,8 @@ def launch_c34_gradio_client(
             f"- 全局审计：`{audit_log_path_hint()}`\n"
             f"- **对话全文**：`{session_chat_log_path(sid)}`\n"
             f"- **编排/工具追踪**：`{session_trace_path(sid)}`"
-            "（刷新网页 UI 会清空，磁盘日志保留）\n\n"
-            "请在下方输入问题；多轮对话会复用同一 Agent 状态。"
+            "（刷新网页 UI 会清空，磁盘日志保留；**logs 页 7861 可实时看 trace**）\n\n"
+            "请在下方 **Session ID** 复制到 `main.py logs` 页粘贴定位。"
         )
         audit_log(
             "session_start_gradio",
@@ -807,7 +816,9 @@ def launch_c34_gradio_client(
 
     with gr.Blocks(title="Topic4 C3/C4 客户端") as demo:
         gr.Markdown(
-            "# Topic4 C3 / C4 统一客户端\n\n"
+            f"# Topic4 C3 / C4 统一客户端（端口 {listen_port}）\n\n"
+            f"只读日志请另开终端 `main.py logs`（默认端口 **{DEFAULT_GRADIO_LOGS_PORT}**），"
+            f"与本页可同时运行。\n\n"
             "先选择实验档位并开始会话，再输入自然语言问题。"
             "系统将按 **第一层规划 → 第二层工具执行 → 第三层研判** 流程处理。\n\n"
             "需 `uv sync --group agent` 与 `.env` 中的 `DEEPSEEK_API_KEY`、`ARK_API_KEY`。"
@@ -844,6 +855,12 @@ def launch_c34_gradio_client(
         )
         start_btn = gr.Button("开始会话", variant="primary")
         session_state = gr.State(initial_session)
+        audit_session_id_tb = gr.Textbox(
+            label="Session ID（复制到 logs 页 http://127.0.0.1:7861 粘贴定位，可看进行中 trace）",
+            value=initial_session.audit_session_id or "",
+            interactive=True,
+            **textbox_copy_button_kwargs(),
+        )
         start_msg = gr.Markdown(resume_err or initial_start_msg)
         chat = gr.Chatbot(label="对话", height=420, value=initial_chat)
         msg_in = gr.Textbox(
@@ -864,18 +881,19 @@ def launch_c34_gradio_client(
             retrieval_label: str,
             doc_path: str,
             use_sandbox: bool,
-        ) -> tuple[C34UiSession, str, list]:
-            return _start_session(
+        ) -> tuple[C34UiSession, str, list, str]:
+            session, msg, chat = _start_session(
                 mode,
                 _retrieval_mode_from_label(retrieval_label),
                 doc_path,
                 use_sandbox,
             )
+            return session, msg, chat, session.audit_session_id or ""
 
         start_btn.click(
             _start_session_wrapped,
             inputs=[mode_radio, retrieval_radio, doc_in, sandbox_cb],
-            outputs=[session_state, start_msg, chat],
+            outputs=[session_state, start_msg, chat, audit_session_id_tb],
         )
         send_btn.click(
             _chat_stream,
@@ -888,7 +906,16 @@ def launch_c34_gradio_client(
             outputs=[chat, session_state, msg_in],
         ).then(lambda: "", outputs=msg_in)
 
-    demo.launch(server_name=host)
+    launch_topic4_gradio(
+        demo,
+        host=host,
+        port=listen_port,
+        service_label="Topic4 C3/C4 对话客户端",
+        peer_hint=(
+            f"只读日志请另开终端：uv run python main.py logs "
+            f"（默认 http://{host}:{DEFAULT_GRADIO_LOGS_PORT}）"
+        ),
+    )
 
 
 def cmd_c34_client(args: argparse.Namespace) -> None:
@@ -920,6 +947,7 @@ def cmd_c34_client(args: argparse.Namespace) -> None:
     else:
         launch_c34_gradio_client(
             host=getattr(args, "host", "127.0.0.1"),
+            port=int(getattr(args, "port", 0) or 0) or None,
             default_enable_c4=bool(enable_c4) if enable_c4 is not None else False,
             default_enable_sandbox=bool(getattr(args, "sandbox", False)),
             default_retrieval_mode=getattr(args, "retrieval_mode", None),
@@ -937,10 +965,18 @@ def build_c34_client_parser(*, add_help: bool = True) -> argparse.ArgumentParser
         action="store_true",
         help="使用终端交互（多行输入，单独一行 END 结束）",
     )
+    from agentic_rag.cli.gradio_launch import DEFAULT_GRADIO_CLIENT_PORT
+
     p.add_argument(
         "--host",
         default="127.0.0.1",
         help="Gradio 监听地址（默认 127.0.0.1）",
+    )
+    p.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_GRADIO_CLIENT_PORT,
+        help=f"Gradio 端口（默认 {DEFAULT_GRADIO_CLIENT_PORT}；logs 查看器默认 7861）",
     )
     p.add_argument(
         "doc_paths",
