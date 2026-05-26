@@ -79,8 +79,18 @@ def run_c1_rewrite_once(
     )
 
 
-def launch_gradio_ui(host: str = "127.0.0.1") -> None:
+def launch_gradio_ui(host: str = "127.0.0.1", port: int | None = None) -> None:
     """浏览器上传 + 问答（旧 upload_demo.py）。"""
+    import time
+
+    from agentic_rag.cli.gradio_launch import (
+        DEFAULT_GRADIO_LEGACY_UI_PORT,
+        launch_topic4_gradio,
+    )
+    from agentic_rag.telemetry.audit_log import audit_log, new_audit_session_id, set_audit_session_id
+    from agentic_rag.telemetry.session_analytics import log_legacy_rag_turn
+
+    listen_port = port if port is not None else DEFAULT_GRADIO_LEGACY_UI_PORT
     import gradio as gr
 
     def _file_path(file: object) -> str:
@@ -90,27 +100,60 @@ def launch_gradio_ui(host: str = "127.0.0.1") -> None:
             return str(file)
         return str(getattr(file, "name", file))
 
-    def run_rag(file: object, question: str, top_k: float) -> str:
+    def _ensure_session(session_id: str) -> str:
+        sid = (session_id or "").strip()
+        if sid:
+            return sid
+        sid = new_audit_session_id()
+        set_audit_session_id(sid)
+        audit_log(
+            "legacy_rag_session_start",
+            session_id=sid,
+            payload={"module": "legacy_rag", "ui": "upload_demo"},
+        )
+        return sid
+
+    def run_rag(file: object, question: str, top_k: float, session_id: str):
         path = _file_path(file)
         if not path:
-            return "请先上传文档（pdf、docx、txt、md）。"
+            return ("请先上传文档（pdf、docx、txt、md）。", session_id, session_id or "", "")
         q = (question or "").strip()
         if not q:
-            return "请输入问题。"
+            return ("请输入问题。", session_id, session_id or "", "")
         if not config.ARK_API_KEY:
-            return "请配置 .env：ARK_API_KEY"
+            return ("请配置 .env：ARK_API_KEY", session_id, session_id or "", "")
         if not config.DEEPSEEK_API_KEY:
-            return "请配置 .env：DEEPSEEK_API_KEY"
+            return ("请配置 .env：DEEPSEEK_API_KEY", session_id, session_id or "", "")
         k = int(top_k) if top_k else 4
+        sid = _ensure_session(session_id)
+        t0 = time.perf_counter()
         try:
-            return local_rag_answer(path, q, top_k=k)
+            answer = local_rag_answer(path, q, top_k=k)
         except Exception as e:
-            return f"执行出错：{e}"
+            answer = f"执行出错：{e}"
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        params = {"doc_path": path, "top_k": k, "pipeline": "c0_naive", "config": "legacy_ui"}
+        if not answer.startswith("执行出错"):
+            log_legacy_rag_turn(
+                sid,
+                user_text=q,
+                assistant_text=answer,
+                params=params,
+                latency_ms=latency_ms,
+            )
+        return (
+            answer,
+            sid,
+            sid,
+            f"Session ID：`{sid}`（可在 main.py logs 页「可视化仪表盘」查看 trace）",
+        )
 
     with gr.Blocks(title="Agentic RAG") as demo:
         gr.Markdown(
             "上传本地文档后输入问题。需配置 `.env`（方舟向量 + DeepSeek）。"
+            "每轮问答写入 audit trace，可在 **main.py logs** 页查看图表。"
         )
+        session_id_state = gr.State("")
         file_in = gr.File(
             label="上传文档",
             file_types=[".pdf", ".docx", ".txt", ".md", ".markdown"],
@@ -119,7 +162,19 @@ def launch_gradio_ui(host: str = "127.0.0.1") -> None:
         q_in = gr.Textbox(label="问题", lines=2)
         k_in = gr.Slider(1, 10, value=4, step=1, label="检索片段数 top_k")
         btn = gr.Button("提交", variant="primary")
+        session_id_tb = gr.Textbox(label="Session ID（trace 追溯）", interactive=False)
         out = gr.Textbox(label="回答", lines=16)
-        btn.click(run_rag, inputs=[file_in, q_in, k_in], outputs=out)
+        session_hint = gr.Markdown("")
+        btn.click(
+            run_rag,
+            inputs=[file_in, q_in, k_in, session_id_state],
+            outputs=[out, session_id_state, session_id_tb, session_hint],
+        )
 
-    demo.launch(server_name=host)
+    launch_topic4_gradio(
+        demo,
+        host=host,
+        port=listen_port,
+        service_label="单文件上传 RAG（legacy ui）",
+        peer_hint="C3/C4 客户端默认 7860，日志查看默认 7861",
+    )
