@@ -21,6 +21,11 @@ KB_GROUNDING_SYSTEM = (
     '{"grounded": true/false, "confidence": 0~1 的数字, "issues": "中文简述"}'
 )
 
+KB_GROUNDING_CLAIM_LEVEL_SUFFIX = (
+    "\n保守优化模式：请按 3-5 条关键 claim 检查。若个别 claim 无证据支持，"
+    "在 issues 中指出具体 claim；不要因为引用数量多就判定 grounded=true。"
+)
+
 
 def run_kb_grounding_check(
     *,
@@ -28,6 +33,7 @@ def run_kb_grounding_check(
     generated_answer: str,
     evidence_excerpt: str,
     model: str | None = None,
+    claim_level: bool = False,
 ) -> dict[str, Any]:
     """
     返回字段：grounded (bool), confidence (float), issues (str), judge_total_tokens (int)。
@@ -54,7 +60,11 @@ def run_kb_grounding_check(
     resp = client.chat.completions.create(
         model=model or config.DEEPSEEK_CHAT_MODEL or "deepseek-chat",
         messages=[
-            {"role": "system", "content": KB_GROUNDING_SYSTEM},
+            {
+                "role": "system",
+                "content": KB_GROUNDING_SYSTEM
+                + (KB_GROUNDING_CLAIM_LEVEL_SUFFIX if claim_level else ""),
+            },
             {"role": "user", "content": user_msg},
         ],
         temperature=0.0,

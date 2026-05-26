@@ -232,3 +232,31 @@ def test_run_c0_token_usage_includes_rerank_slot(monkeypatch):
     )
     assert "rerank" in result["token_usage"]
     assert result["token_usage"]["rerank"] == {}
+
+
+def test_run_c0_evidence_grader_filters_before_answer(monkeypatch):
+    monkeypatch.setattr(
+        local_rag,
+        "embed_texts",
+        lambda texts, **_: [[0.0, 0.0, 1.0, 0.0]],
+    )
+
+    seen = {}
+
+    def _answer(question, hits, **_):
+        seen["chunk_ids"] = [hit.chunk_id for hit in hits]
+        return "ok", {"total_tokens": 1}
+
+    monkeypatch.setattr(local_rag, "generate_answer_from_hits", _answer)
+
+    result = local_rag.run_c0_with_index(
+        _four_chunk_index(),
+        "gamma beta",
+        top_k=4,
+        use_evidence_grader=True,
+        evidence_grader_backend="heuristic",
+    )
+
+    assert result["error"] == ""
+    assert result["evidence_grades"]
+    assert result["evidence_grader_kept_chunk_ids"] == seen["chunk_ids"]

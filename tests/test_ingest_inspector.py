@@ -9,7 +9,7 @@ from agentic_rag.documents.ingest_inspector import (
     inspect_document_paths,
     resolve_session_doc_ids,
 )
-from agentic_rag.telemetry.audit_log import audit_log, default_audit_log_path
+from agentic_rag.telemetry.audit_log import audit_log
 
 
 def test_same_content_different_paths_warning(tmp_path: Path):

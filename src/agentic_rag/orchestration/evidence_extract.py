@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -43,8 +44,31 @@ def _agent_debug_log(*, hypothesis_id: str, message: str, data: dict) -> None:
     # #endregion
 
 
+def _dedupe_evidence_excerpts(excerpts: list[str], *, max_chars: int = 12_000) -> str:
+    parts: list[str] = []
+    seen_chunk_ids: set[str] = set()
+    for ex in excerpts:
+        for block in re.split(r"\n(?=\[\d+\s+doc_id=)", ex.strip()):
+            text = block.strip()
+            if not text:
+                continue
+            m = re.search(r"chunk_id=([^\]\s]+)", text)
+            if m:
+                cid = m.group(1).strip()
+                if cid in seen_chunk_ids:
+                    continue
+                seen_chunk_ids.add(cid)
+            elif text in parts:
+                continue
+            parts.append(text)
+            current = "\n\n".join(parts)
+            if len(current) >= max_chars:
+                return current[: max_chars - 20] + "\n…(truncated)"
+    return "\n\n".join(parts)[:max_chars]
+
+
 def extract_latest_evidence_excerpt(messages: list[Any] | None) -> str:
-    """解析 ``topic4_rag_query`` 返回的 JSON 字符串中的 ``evidence_excerpt``。"""
+    """解析 RAG 工具 JSON 中的 ``evidence_excerpt``，并轻量去重压缩。"""
     if not messages:
         return ""
 
@@ -53,6 +77,7 @@ def extract_latest_evidence_excerpt(messages: list[Any] | None) -> str:
     except ImportError:
         ToolMessage = ()  # type: ignore[misc,assignment]
 
+    excerpts: list[str] = []
     for m in reversed(messages):
         if ToolMessage and isinstance(m, ToolMessage):
             text = _tool_message_text(m.content)
@@ -76,8 +101,10 @@ def extract_latest_evidence_excerpt(messages: list[Any] | None) -> str:
                 continue
             ex = data.get("evidence_excerpt")
             if isinstance(ex, str) and ex.strip():
-                return ex.strip()
-    return ""
+                excerpts.append(ex.strip())
+                if len(excerpts) >= 4:
+                    break
+    return _dedupe_evidence_excerpts(excerpts) if excerpts else ""
 
 
 def extract_last_assistant_text(messages: list[Any] | None) -> str:

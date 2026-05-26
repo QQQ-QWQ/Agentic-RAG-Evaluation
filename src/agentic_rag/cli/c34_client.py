@@ -52,7 +52,7 @@ from agentic_rag.telemetry.streaming_hooks import (
     merge_orchestration_hooks,
 )
 from agentic_rag.orchestration.types import OrchestrationConfig
-from agentic_rag.runtime.types import RuntimeEvent, SubmitResult
+from agentic_rag.runtime.types import RuntimeEvent
 
 
 def _require_agent_group() -> None:

@@ -10,6 +10,14 @@ from agentic_rag.runtime.types import RuntimeEvent
 from agentic_rag.telemetry.audit_payload import plan_to_payload, truncate_text, verdict_to_payload
 
 
+def safe_print_console(text: str) -> None:
+    """Print best-effort text without failing on narrow Windows encodings."""
+    try:
+        print(text, flush=True)
+    except UnicodeEncodeError:
+        print(str(text).encode("utf-8", errors="replace").decode("utf-8"), flush=True)
+
+
 def merge_orchestration_hooks(*parts: OrchestrationHooks) -> OrchestrationHooks:
     """合并多个钩子；同名字段按顺序链式调用。"""
 

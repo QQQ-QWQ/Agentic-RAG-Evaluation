@@ -23,7 +23,6 @@ from agentic_rag.tools.file_tool import (
     format_file_ingest_response,
     format_file_read_response,
     format_file_write_response,
-    ingest_file_to_kb,
     read_file_content,
     write_file_content,
 )
@@ -422,6 +421,7 @@ def build_topic4_rag_tools(
     kb_doc_ids: list[str] | None = None,
     sandbox_workspace: Path | None = None,
     enable_c4_tools: bool = True,
+    use_rag_subagent_tools: bool = False,
 ) -> list[Any]:
     """
     - C3（``enable_c4_tools=False``）：仅 ``topic4_list_rag_pipelines`` + ``topic4_rag_query``（无 Firecrawl / 本地读盘）。
@@ -514,7 +514,18 @@ def build_topic4_rag_tools(
             sandbox_workspace=sandbox_workspace,
         ),
     ]
+    if use_rag_subagent_tools:
+        from agentic_rag.deep_planning.rag_subagent_tools import build_rag_subagent_tools
 
+        tools.extend(
+            build_rag_subagent_tools(
+                doc_path=doc_path,
+                use_knowledge_base=use_kb,
+                kb_doc_ids=kb_doc_ids,
+            )
+        )
+
+    from agentic_rag.deep_planning.tool_quota import wrap_tools_with_rag_quota
     from agentic_rag.telemetry.tool_audit import wrap_tools_with_audit
 
-    return wrap_tools_with_audit(tools)
+    return wrap_tools_with_audit(wrap_tools_with_rag_quota(tools))

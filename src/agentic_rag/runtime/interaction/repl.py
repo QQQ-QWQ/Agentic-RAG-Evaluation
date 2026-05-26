@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from agentic_rag.orchestration.types import OrchestrationConfig
 from agentic_rag.runtime.engine.query_engine import QueryEngine, QueryEngineConfig

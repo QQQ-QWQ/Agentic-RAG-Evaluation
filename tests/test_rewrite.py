@@ -71,6 +71,24 @@ def test_build_retrieval_queries_uses_multiple_candidates():
     ]
 
 
+def test_build_retrieval_queries_can_cap_candidates():
+    result = normalize_rewrite_payload(
+        {
+            "need_rewrite": True,
+            "rewrite_confidence": 0.9,
+            "rewrite_reason": "query needs expansion",
+            "rewritten_query": "query one",
+            "rewritten_queries": ["query one", "query two", "query three"],
+        },
+        original_query="original query",
+    )
+
+    assert build_retrieval_queries("original query", result, max_queries=2) == [
+        "original query",
+        "query one",
+    ]
+
+
 def test_low_confidence_rewrite_is_suppressed():
     result = normalize_rewrite_payload(
         {

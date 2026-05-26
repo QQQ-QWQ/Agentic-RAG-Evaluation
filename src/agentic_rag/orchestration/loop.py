@@ -61,6 +61,27 @@ def _maybe_override_continue_execute(
             ).strip(),
             raw={**(verdict.raw or {}), "override": "session_rag_quota"},
         )
+    if (
+        cfg.enable_c3_conservative_optimization
+        and verdict.support_verdict == "partially_supported"
+    ):
+        return JudgeVerdict(
+            verdict="complete",
+            summary_for_user=verdict.summary_for_user
+            or "Core claims are supported; finish with the supported answer and note uncertain parts.",
+            hint_for_next_planner=None,
+            hint_for_next_execution=None,
+            reasoning_brief=(
+                (verdict.reasoning_brief or "")
+                + " [orchestration] partially_supported -> complete"
+            ).strip(),
+            support_verdict=verdict.support_verdict,
+            unsupported_claims=verdict.unsupported_claims,
+            missing_required_items=verdict.missing_required_items,
+            citation_mismatches=verdict.citation_mismatches,
+            revision_instruction=verdict.revision_instruction,
+            raw={**(verdict.raw or {}), "override": "partial_supported_complete"},
+        )
     if not cfg.prefer_complete_when_grounded:
         return verdict
     if kb_digest and not kb_digest.get("skipped"):
@@ -319,12 +340,18 @@ def _orchestrate_until_stable(
 
     from agentic_rag.deep_planning.tool_quota import reset_rag_session_quota
 
-    reset_rag_session_quota(max_total_calls=cfg.max_total_rag_calls)
+    reset_rag_session_quota(
+        max_total_calls=cfg.max_total_rag_calls,
+        block_duplicate_queries=cfg.enable_c3_conservative_optimization,
+    )
 
     orch_round = 0
     while orch_round < cfg.max_orchestration_rounds:
         orch_round += 1
-        reset_rag_tool_quota(max_calls=cfg.max_rag_tool_calls_per_round)
+        reset_rag_tool_quota(
+            max_calls=cfg.max_rag_tool_calls_per_round,
+            block_duplicate_queries=cfg.enable_c3_conservative_optimization,
+        )
         _fire("on_round_start", orch_round)
 
         if skip_layer1 and orch_round == 1:
@@ -468,11 +495,15 @@ def _orchestrate_until_stable(
             use_knowledge_base=(doc_resolved is None),
             kb_execution_notes=kb_notes,
             enable_c4_tools=cfg.enable_c4_tools,
+            enable_c3_conservative_optimization=cfg.enable_c3_conservative_optimization,
         )
 
         verdict: JudgeVerdict | None = None
         for attempt_idx in range(cfg.max_execute_retries_per_round):
-            reset_rag_tool_quota(max_calls=cfg.max_rag_tool_calls_per_round)
+            reset_rag_tool_quota(
+                max_calls=cfg.max_rag_tool_calls_per_round,
+                block_duplicate_queries=cfg.enable_c3_conservative_optimization,
+            )
             if attempt_idx > 0:
                 print(
                     "\n[编排] 第三层判定「继续执行」，正在开始第二层第 "
@@ -536,6 +567,7 @@ def _orchestrate_until_stable(
                     question=user_original,
                     generated_answer=ans_txt,
                     evidence_excerpt=ev,
+                    claim_level=cfg.enable_c3_conservative_optimization,
                 )
                 print("\n--- 知识库对齐核验 ---\n")
                 print(
@@ -559,6 +591,7 @@ def _orchestrate_until_stable(
                 orchestration_round=orch_round,
                 temperature=cfg.judge_temperature,
                 kb_grounding=kb_digest,
+                claim_level=cfg.enable_c3_conservative_optimization,
             )
             verdict = _maybe_override_continue_execute(
                 verdict,
@@ -586,6 +619,7 @@ def _orchestrate_until_stable(
                     use_knowledge_base=(doc_resolved is None),
                     kb_execution_notes=kb_notes,
                     enable_c4_tools=cfg.enable_c4_tools,
+                    enable_c3_conservative_optimization=cfg.enable_c3_conservative_optimization,
                 )
                 continue
             break

@@ -120,6 +120,7 @@ def build_topic4_deep_agent(
     sandbox_workspace: Path | None = None,
     additional_tools: list[Any] | None = None,
     enable_c4_tools: bool = True,
+    use_rag_subagent_tools: bool = False,
 ):
     """创建 Deep Agent（内置 todos / 虚拟文件系统等 + Topic4 RAG 工具；可选沙箱）。
 
@@ -147,6 +148,7 @@ def build_topic4_deep_agent(
         kb_doc_ids=kb_doc_ids,
         sandbox_workspace=sandbox_workspace if enable_c4_tools else None,
         enable_c4_tools=enable_c4_tools,
+        use_rag_subagent_tools=use_rag_subagent_tools,
     )
     if additional_tools:
         tools = [*tools, *additional_tools]
@@ -156,6 +158,13 @@ def build_topic4_deep_agent(
         base = DEFAULT_AGENT_SYSTEM_PROMPT
     else:
         base = DEFAULT_AGENT_SYSTEM_PROMPT_C3
+    if use_rag_subagent_tools and not enable_c4_tools:
+        base += (
+            "\n\n【C3 检索子 Agent】当前还可调用 rag_subagent_c0、"
+            "rag_subagent_c1、rag_subagent_c2。它们分别固定执行 C0/C1/C2 管线，"
+            "适合减少反复 list pipeline 和选错 pipeline。若问题已经通过一次子 Agent "
+            "得到足够证据，不要重复检索同一问题。"
+        )
     from agentic_rag.experiment.session_rag import (
         get_combine_ephemeral_with_kb,
         get_ephemeral_session_index,

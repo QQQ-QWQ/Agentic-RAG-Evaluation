@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 VerdictCode = Literal["complete", "continue_execute", "replan", "need_user_input"]
+SupportVerdict = Literal["supported", "partially_supported", "unsupported", "unknown"]
 
 
 @dataclass
@@ -45,6 +46,8 @@ class OrchestrationConfig:
     """批量/入口侧按题型与 expected_path 选择 C2 轻路径或 C3/C4 编排（见 route_policy）。"""
     prefer_complete_when_grounded: bool = True
     """第三层：证据已对齐且执行轮次已用尽一次时，倾向 complete 而非继续检索。"""
+    enable_c3_conservative_optimization: bool = False
+    """C3 内部保守优化：重复检索抑制、引用筛选提示与 claim-level self-check。"""
 
 
 @dataclass
@@ -56,6 +59,11 @@ class JudgeVerdict:
     hint_for_next_planner: str | None
     hint_for_next_execution: str | None
     reasoning_brief: str
+    support_verdict: SupportVerdict = "unknown"
+    unsupported_claims: list[str] = field(default_factory=list)
+    missing_required_items: list[str] = field(default_factory=list)
+    citation_mismatches: list[str] = field(default_factory=list)
+    revision_instruction: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -91,8 +99,54 @@ def verdict_from_json(data: dict[str, Any]) -> JudgeVerdict:
         hint_for_next_planner=_none_if_empty(data.get("hint_for_next_planner")),
         hint_for_next_execution=_none_if_empty(data.get("hint_for_next_execution")),
         reasoning_brief=str(data.get("reasoning_brief") or "").strip(),
+        support_verdict=_support_verdict_from_json(data),
+        unsupported_claims=_unsupported_claims_from_json(data),
+        missing_required_items=_string_list_from_json(data, "missing_required_items"),
+        citation_mismatches=_string_list_from_json(data, "citation_mismatches"),
+        revision_instruction=_none_if_empty(data.get("revision_instruction")),
         raw=data,
     )
+
+
+def _support_verdict_from_json(data: dict[str, Any]) -> SupportVerdict:
+    value = str(data.get("support_verdict") or data.get("support") or "").strip().lower()
+    mapping: dict[str, SupportVerdict] = {
+        "supported": "supported",
+        "support": "supported",
+        "fully_supported": "supported",
+        "grounded": "supported",
+        "partially_supported": "partially_supported",
+        "partial": "partially_supported",
+        "partly_supported": "partially_supported",
+        "unsupported": "unsupported",
+        "not_supported": "unsupported",
+        "ungrounded": "unsupported",
+        "unknown": "unknown",
+    }
+    return mapping.get(value, "unknown")
+
+
+def _unsupported_claims_from_json(data: dict[str, Any]) -> list[str]:
+    return _string_list_from_json(data, "unsupported_claims", "unsupported_claim")
+
+
+def _string_list_from_json(data: dict[str, Any], *keys: str) -> list[str]:
+    value: Any = []
+    for key in keys:
+        if data.get(key):
+            value = data.get(key)
+            break
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        claims: list[str] = []
+        for item in value:
+            text = str(item).strip()
+            if text:
+                claims.append(text)
+        return claims
+    return []
 
 
 def _none_if_empty(x: Any) -> str | None:

@@ -24,6 +24,7 @@ RAG_PIPELINE_LABELS: dict[str, str] = {
     "c2_stage1_hybrid": "C2 阶段1：C1 + hybrid（稠密+BM25 融合）",
     "c2_stage2_rerank": "C2 阶段2：阶段1 + LLM rerank",
     "c2_stage3_context": "C2 阶段3：阶段2 + 邻接 chunk 上下文扩展",
+    "c3_lite_v2": "C3-lite-v2：multi-query RRF + rerank + Evidence Grader",
 }
 
 
@@ -63,6 +64,20 @@ def _base_c2_s2() -> RunProfile:
 def _base_c2_s3() -> RunProfile:
     p = _base_c2_s2()
     p.context_neighbor_chunks = 1
+    p.context_max_expanded_hits = 3
+    p.context_max_chars = 6000
+    p.use_evidence_grader = False
+    return p
+
+
+def _base_c3_lite_v2() -> RunProfile:
+    p = _base_c2_s2()
+    p.multi_query_fusion = "rrf"
+    p.multi_query_top_k = 8
+    p.max_retrieval_queries = 3
+    p.rrf_k = 60
+    p.use_evidence_grader = True
+    p.evidence_grader_max_chunks = 8
     return p
 
 
@@ -78,6 +93,7 @@ _PRESET_BUILDERS: dict[str, RunProfile] = {
     "c2_stage1_hybrid": _base_c2_s1(),
     "c2_stage2_rerank": _base_c2_s2(),
     "c2_stage3_context": _base_c2_s3(),
+    "c3_lite_v2": _base_c3_lite_v2(),
 }
 
 

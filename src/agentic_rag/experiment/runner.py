@@ -44,6 +44,15 @@ def run_document_rag(
         "rerank_backend": p.rerank_backend,
         "rerank_pool_size": p.rerank_pool_size,
         "context_neighbor_chunks": p.context_neighbor_chunks,
+        "context_max_expanded_hits": p.context_max_expanded_hits,
+        "context_max_chars": p.context_max_chars,
+        "multi_query_fusion": p.multi_query_fusion,
+        "multi_query_top_k": p.multi_query_top_k,
+        "max_retrieval_queries": p.max_retrieval_queries,
+        "rrf_k": p.rrf_k,
+        "use_evidence_grader": p.use_evidence_grader,
+        "evidence_grader_backend": p.evidence_grader_backend,
+        "evidence_grader_max_chunks": p.evidence_grader_max_chunks,
     }
 
     if p.use_query_rewrite:
@@ -106,6 +115,15 @@ def run_knowledge_base_rag(
         "rerank_backend": p.rerank_backend,
         "rerank_pool_size": p.rerank_pool_size,
         "context_neighbor_chunks": p.context_neighbor_chunks,
+        "context_max_expanded_hits": p.context_max_expanded_hits,
+        "context_max_chars": p.context_max_chars,
+        "multi_query_fusion": p.multi_query_fusion,
+        "multi_query_top_k": p.multi_query_top_k,
+        "max_retrieval_queries": p.max_retrieval_queries,
+        "rrf_k": p.rrf_k,
+        "use_evidence_grader": p.use_evidence_grader,
+        "evidence_grader_backend": p.evidence_grader_backend,
+        "evidence_grader_max_chunks": p.evidence_grader_max_chunks,
     }
 
     doc_filter: frozenset[str] | None = None

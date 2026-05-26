@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
-from agentic_rag.telemetry.audit_log import audit_record, get_audit_session_id, set_audit_session_id
-from agentic_rag.telemetry.session_trace import load_session_trace, session_trace_path
+from agentic_rag.telemetry.audit_log import audit_record, set_audit_session_id
+from agentic_rag.telemetry.session_trace import load_session_trace
 from agentic_rag.telemetry.tool_audit import wrap_tool_with_audit
 
 

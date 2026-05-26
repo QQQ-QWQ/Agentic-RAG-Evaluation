@@ -36,6 +36,9 @@ CHROMA_PERSIST_DIRECTORY = _env(
 DEEPSEEK_API_KEY = _env("DEEPSEEK_API_KEY") or _env("OPENAI_API_KEY")
 DEEPSEEK_BASE_URL = _env("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 DEEPSEEK_CHAT_MODEL = _env("DEEPSEEK_CHAT_MODEL", "deepseek-chat")
+DEEPSEEK_REQUEST_TIMEOUT_SEC = float(
+    _env("DEEPSEEK_REQUEST_TIMEOUT_SEC", "120") or "120"
+)
 
 # 本地代码沙箱（subprocess + 独立工作目录，非 Docker）
 # 设为 true 后方注册 sandbox_exec_python 工具；请在可信环境下使用。

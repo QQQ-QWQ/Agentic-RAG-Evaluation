@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 ExecutionMode = Literal["c2_kb", "c3_orchestrated", "c4_orchestrated"]
 
@@ -60,9 +60,26 @@ def resolve_route(
             mode="c3_orchestrated",
             rag_preset="c2_stage2_rerank",
             reason="adaptive_disabled_tier_c3",
-            max_orchestration_rounds=4,
-            max_execute_retries_per_round=2,
-            max_rag_tool_calls_per_round=10,
+            max_orchestration_rounds=2,
+            max_execute_retries_per_round=1,
+            max_rag_tool_calls_per_round={
+                "simple_qa": 1,
+                "fuzzy_query": 2,
+                "multi_doc": 3,
+                "insufficient_evidence": 2,
+                "calculation": 1,
+                "table_analysis": 1,
+                "code_execution": 1,
+            }.get(_norm(task_type), 2),
+            max_total_rag_calls={
+                "simple_qa": 1,
+                "fuzzy_query": 2,
+                "multi_doc": 3,
+                "insufficient_evidence": 2,
+                "calculation": 1,
+                "table_analysis": 1,
+                "code_execution": 1,
+            }.get(_norm(task_type), 2),
         )
 
     exp = (expected_path or "").strip().upper()
@@ -77,16 +94,19 @@ def resolve_route(
             reason=reason,
         )
 
-    def c3_light(reason: str) -> RouteDecision:
+    def c3_budget(reason: str, max_calls: int) -> RouteDecision:
         return RouteDecision(
             mode="c3_orchestrated",
             rag_preset="c2_stage2_rerank",
             reason=reason,
             max_orchestration_rounds=2,
             max_execute_retries_per_round=1,
-            max_rag_tool_calls_per_round=4,
-            max_total_rag_calls=8,
+            max_rag_tool_calls_per_round=max_calls,
+            max_total_rag_calls=max_calls,
         )
+
+    def c3_light(reason: str) -> RouteDecision:
+        return c3_budget(reason, 3)
 
     def c3_full(reason: str) -> RouteDecision:
         return RouteDecision(
@@ -129,8 +149,7 @@ def resolve_route(
         if tier_n == "c4":
             return c4_full("expected_path_c4")
         return c2("c2_stage2_rerank", "expected_path_c4_on_c3_tier_fallback_c2_kb")
-    if exp == "C3":
-        return c3_full("expected_path_c3")
+    # expected_path=C3 继续按题型收敛预算；无题型时使用默认轻量预算。
 
     # 无 expected_path：按题型启发
     if tt == "simple_qa":
@@ -142,17 +161,18 @@ def resolve_route(
         return c2("c2_stage2_rerank", f"task_type_{tt}_tier_c3_c2_kb")
 
     if tt == "multi_doc":
-        if diff == "hard":
-            return c3_full("task_type_multi_doc_hard")
-        return c3_light("task_type_multi_doc")
+        return c3_budget("task_type_multi_doc", 3)
 
     if tt == "fuzzy_query":
-        if diff == "hard":
-            return c3_light("task_type_fuzzy_query_hard")
+        if diff == "hard" or exp == "C3":
+            return c3_budget("task_type_fuzzy_query", 2)
         return c2("c1_rewrite", "task_type_fuzzy_query")
 
     if tt == "insufficient_evidence":
-        return c3_light("task_type_insufficient_evidence")
+        return c3_budget("task_type_insufficient_evidence", 2)
+
+    if exp == "C3":
+        return c3_budget("expected_path_c3_default_budget", 2)
 
     if tier_n == "c4":
         return c4_full("default_tier_c4")

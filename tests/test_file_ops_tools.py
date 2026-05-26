@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from agentic_rag.tools.file_tool import edit_file_content, write_file_content

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any
+
 
 def min_max_normalize(values: list[float]) -> list[float]:
     """将分数缩放到 [0, 1]；全相等时退化为 0.5（无区分度）。"""
@@ -38,3 +41,42 @@ def fuse_dense_bm25(
     nd = min_max_normalize(dense_scores)
     nb = min_max_normalize(bm25_scores)
     return [wd * d + wb * b for d, b in zip(nd, nb, strict=True)]
+
+
+def reciprocal_rank_fusion(
+    ranked_groups: list[list[Any]],
+    *,
+    top_k: int,
+    rrf_k: int = 60,
+    id_attr: str = "chunk_id",
+) -> list[Any]:
+    """Fuse ranked hit groups with Reciprocal Rank Fusion."""
+    if top_k <= 0:
+        return []
+    scores: dict[str, float] = {}
+    best: dict[str, Any] = {}
+    best_raw_score: dict[str, float] = {}
+    for group in ranked_groups:
+        for rank, item in enumerate(group, start=1):
+            item_id = str(getattr(item, id_attr, "") or "")
+            if not item_id:
+                continue
+            scores[item_id] = scores.get(item_id, 0.0) + 1.0 / (rrf_k + rank)
+            raw_score = float(getattr(item, "score", 0.0) or 0.0)
+            if item_id not in best or raw_score > best_raw_score.get(item_id, -1.0):
+                best[item_id] = item
+                best_raw_score[item_id] = raw_score
+    ordered = sorted(
+        best,
+        key=lambda item_id: (scores[item_id], best_raw_score.get(item_id, 0.0)),
+        reverse=True,
+    )[:top_k]
+    out: list[Any] = []
+    for rank, item_id in enumerate(ordered, start=1):
+        item = best[item_id]
+        try:
+            item = replace(item, score=scores[item_id], rank=rank)
+        except TypeError:
+            pass
+        out.append(item)
+    return out

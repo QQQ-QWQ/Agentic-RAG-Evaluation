@@ -1061,16 +1061,12 @@ def render_session_chart_html(
     rags = json.dumps([t.rag_count for t in analytics.turns])
     tools = json.dumps([sum(t.tool_counts.values()) for t in analytics.turns])
 
-    turn_tools = json.dumps(list(turn.tool_counts.keys()), ensure_ascii=False)
-    turn_tool_vals = json.dumps(list(turn.tool_counts.values()))
     turn_verdicts: dict[str, int] = {}
     for v in turn.verdicts:
         turn_verdicts[v] = turn_verdicts.get(v, 0) + 1
     verdict_labels = json.dumps(list(turn_verdicts.keys()), ensure_ascii=False)
     verdict_vals = json.dumps(list(turn_verdicts.values()))
 
-    rag_pipe_labels = json.dumps(turn.rag_pipelines, ensure_ascii=False)
-    rag_pipe_vals = json.dumps([1] * len(turn.rag_pipelines))
 
     dash_title = title or f"会话 {analytics.session_id[:8]}… · {analytics.module.upper()}"
     height = 220 if compact else 260

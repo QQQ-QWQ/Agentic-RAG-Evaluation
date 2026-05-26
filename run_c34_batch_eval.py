@@ -83,6 +83,22 @@ def build_c34_batch_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
         help="单轮第二层 RAG 类工具调用上限（默认 10）",
     )
     parser.add_argument(
+        "--c3-conservative-opt",
+        action="store_true",
+        help="开启 C3 内部保守优化：重复检索抑制、引用筛选提示和 claim-level self-check",
+    )
+    parser.add_argument(
+        "--force-rag-preset",
+        default="",
+        help="强制所有题走指定 C0/C1/C2 RAG preset，用于 C2 Stage2/Stage3 同题对照",
+    )
+    parser.add_argument(
+        "--result-csv",
+        type=Path,
+        default=None,
+        help="显式指定结果 CSV，避免不同对照实验互相覆盖",
+    )
+    parser.add_argument(
         "--no-adaptive-route",
         action="store_true",
         help="关闭按 expected_path/题型 的 C2 轻路径路由，全部走完整 C3/C4 编排",
@@ -115,6 +131,9 @@ def main_from_args(args: argparse.Namespace) -> int:
         repeat=args.repeat,
         use_rag_subagent_tools=not args.no_subagent_tools,
         max_rag_tool_calls_per_round=args.max_rag_calls,
+        enable_c3_conservative_optimization=args.c3_conservative_opt,
+        force_rag_preset=args.force_rag_preset or None,
+        result_csv=args.result_csv,
         log_dir=args.log_dir,
         continue_on_error=not args.fail_fast,
         stream_events_to_stdout=args.verbose_events,

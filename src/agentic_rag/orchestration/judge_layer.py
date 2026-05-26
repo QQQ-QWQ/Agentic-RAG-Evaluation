@@ -37,6 +37,34 @@ JSON 字段：
 """
 
 
+CLAIM_LEVEL_SELF_CHECK_PROMPT = """
+
+【C3 保守优化 · Claim-Level Self-Check】
+- 将第二层最终答复视为 3-5 条关键 claim，而不是泛泛判断“回答是否好”。
+- 每条关键 claim 必须能被执行摘录中的 citation 或检索证据支撑。
+- 若只有个别 claim 缺证据，优先 verdict=continue_execute，并在 hint 中明确指出要修正或删除的 claim。
+- 若核心结论已被证据支撑且没有明显缺口，应 verdict=complete，不要为了“更全”继续检索。
+- 不要求第二层整篇重写，避免引入新的无证据内容。
+"""
+
+
+CLAIM_LEVEL_SELF_CHECK_PROMPT += """
+
+[C3 conservative optimization: claim-level self-check contract]
+- Check the final answer as 3-5 key claims.
+- Each key claim should be supported by at least one citation or retrieved evidence excerpt.
+- Output "support_verdict" as one of: "supported", "partially_supported", "unsupported".
+- Output "unsupported_claims" as a JSON list; keep it empty when all core claims are supported.
+- Output "missing_required_items" as a JSON list when a multi-object or comparison question omits a required object.
+- Output "citation_mismatches" as a JSON list for claims whose citation does not directly support the claim.
+- Output "revision_instruction" as one concrete instruction: remove an unsupported claim, add a missing required item, mark an item as insufficient evidence, replace a mismatched citation, or shorten background citations.
+- If the core answer is supported and only minor details are missing, use verdict="complete" and support_verdict="partially_supported".
+- Use continue_execute only when missing evidence is central and another retrieval attempt is likely to help.
+- Do not request a full rewrite when only one claim needs removal, correction, or a better citation.
+- Do not use vague hints such as "answer better"; point to the exact claim, missing item, or citation problem.
+"""
+
+
 def run_orchestration_judge(
     *,
     user_goal: str,
@@ -45,6 +73,7 @@ def run_orchestration_judge(
     orchestration_round: int,
     temperature: float = 0.12,
     kb_grounding: dict | None = None,
+    claim_level: bool = False,
 ) -> JudgeVerdict:
     """第三层单次调用。``kb_grounding`` 为 ``kb_grounding.run_kb_grounding_check`` 的结果（可选）。"""
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -69,9 +98,10 @@ def run_orchestration_judge(
         f"{kb_block}"
         f"【第二层执行摘录】\n{execution_transcript.strip()[:12000]}\n"
     )
+    system_prompt = LAYER3_SYSTEM_PROMPT + (CLAIM_LEVEL_SELF_CHECK_PROMPT if claim_level else "")
     msg = llm.invoke(
         [
-            SystemMessage(content=LAYER3_SYSTEM_PROMPT),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=human),
         ]
     )
@@ -86,5 +116,10 @@ def run_orchestration_judge(
             hint_for_next_planner=None,
             hint_for_next_execution=None,
             reasoning_brief="judge JSON parse fallback",
+            support_verdict="unknown",
+            unsupported_claims=[],
+            missing_required_items=[],
+            citation_mismatches=[],
+            revision_instruction=None,
             raw={"error": True, "model_text": raw_text[:500]},
         )

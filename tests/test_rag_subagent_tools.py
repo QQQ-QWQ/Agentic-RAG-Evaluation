@@ -13,19 +13,23 @@ from agentic_rag.deep_planning.tool_quota import (
     RAG_TOOL_NAMES,
     RagToolQuota,
     reset_rag_tool_quota,
-    wrap_tools_with_rag_quota,
 )
 
 
 def test_subagent_specs_cover_c0_c1_c2():
     names = {s[0] for s in RAG_SUBAGENT_SPECS}
-    assert names == {"rag_subagent_c0", "rag_subagent_c1", "rag_subagent_c2"}
+    assert names == {
+        "rag_subagent_c0",
+        "rag_subagent_c1",
+        "rag_subagent_c2",
+        "rag_subagent_c3_lite",
+    }
     assert SUBAGENT_TOOL_NAMES == names
 
 
 def test_build_subagent_tools_count():
     tools = build_rag_subagent_tools(use_knowledge_base=True)
-    assert len(tools) == 3
+    assert len(tools) == 4
     tool_names = {getattr(t, "name", "") for t in tools}
     assert tool_names == SUBAGENT_TOOL_NAMES
 
@@ -40,8 +44,20 @@ def test_rag_quota_blocks_after_limit():
     assert data["error"] == "rag_tool_quota_exceeded"
 
 
+def test_rag_quota_blocks_duplicate_query_when_enabled():
+    q = reset_rag_tool_quota(max_calls=5, block_duplicate_queries=True)
+    inp = {"question": "Agentic RAG 是什么？", "pipeline": "c2_stage2_rerank"}
+    assert q.try_consume("topic4_rag_query", inp) is None
+    blocked = q.try_consume("topic4_rag_query", inp)
+    assert blocked is not None
+    data = json.loads(blocked)
+    assert data["error"] == "rag_duplicate_query_blocked"
+    assert q.duplicate_query_count == 1
+
+
 def test_rag_tool_names_include_subagents():
     assert "rag_subagent_c2" in RAG_TOOL_NAMES
+    assert "rag_subagent_c3_lite" in RAG_TOOL_NAMES
 
 
 def test_quota_block_returns_tool_message_for_langgraph():

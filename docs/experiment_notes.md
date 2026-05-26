@@ -2135,3 +2135,68 @@ incomplete_answer：Q013、Q017
 5. 可选：对 Q013/Q014 收紧 `max_rag_tool_calls_per_round` 或编排轮次，做延迟消融。
 
 详细逐题表见：`runs/logs/c3_agentic_retrieval_batch/FORMAL_main_20_2026-05-25.md`。
+## 2026-05-27：C2 Stage3 回退与 C3-lite-next 30 题实验结论
+
+### 1. 本次操作
+
+本轮完成三件事：
+
+1. 对当前 C2 Stage3 next 结果进行本地备份，备份目录为：
+   `archive/experiment_runs/c2_stage3_next_before_rollback_2026-05-27/`
+2. 将 C2 Stage3 代码口径回退为旧版 Stage3：
+   `C2 Stage2 + context_neighbor_chunks=1`，不再给 `c2_stage3_context` 启用 Evidence Grader。
+3. 整理 C3-lite-next 30 题实验结果，并新增完整报告：
+   `docs/c3_lite_next_30_experiment_report.md`
+
+### 2. C2 Stage3 结论口径
+
+当前 C2 Stage3 next 在 30 题上的 AI Judge 综合分为 `0.658`，低于旧版 C2 Stage3 的 `0.725`，也低于 C2 Stage2 的 `0.738`。
+
+因此本课题后续采用以下口径：
+
+- C2 主基线：`C2 Stage2 Hybrid + Rerank`。
+- C2 Stage3 old：作为上下文扩展边界对照。
+- C2 Stage3 next：作为失败优化尝试记录，不作为正式增强方案。
+
+代码上已回退 `c2_stage3_context` 的 preset，使其不再使用 Evidence Grader；Evidence Grader、RRF 和多查询能力仍保留给 C3-lite 使用。
+
+### 3. C3-lite-next 30 题结果
+
+本轮 C3-lite-next 使用以下口径：
+
+```text
+--planning-rewrite
+--no-adaptive-route
+--c3-conservative-opt
+```
+
+30 题结果摘要：
+
+| 配置 | 成功题数 | 平均延迟 | 平均 RAG 次数 | Answer Correctness | Citation Accuracy | Faithfulness | 综合分 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| C3 formal old | 30/30 | 156.7s | 10.87 | 0.767 | 0.750 | 0.950 | 0.808 |
+| C3 conservative old | 30/30 | 98.3s | 5.37 | 0.733 | 0.767 | 0.917 | 0.792 |
+| C3-lite-next | 30/30 | 41.6s | 1.60 | 0.750 | 0.717 | 0.967 | 0.796 |
+
+阶段性判断：
+
+- C3-lite-next 相比旧版 C3 conservative 大幅降低延迟和 RAG 调用次数。
+- 综合分基本保持，甚至从 `0.792` 小幅提升到 `0.796`。
+- 当前 C3 的主要收益集中在 multi_doc、fuzzy_query、insufficient_evidence 任务。
+- simple_qa、calculation、code_execution 类题目中，C2 通常已经足够，C3 不应作为所有题的默认路径。
+
+### 4. 后续需要人工复核的题
+
+AI Judge 只能作为辅助。以下题目需要唐宁人工复核：
+
+```text
+Q005, Q006, Q012, Q015, Q023, Q027
+```
+
+复核重点：
+
+- 是否漏掉 required items；
+- claim 与 citation 是否一一对应；
+- 是否混淆分类体系；
+- 是否出现过度保守或证据不足仍下结论；
+- C3 的额外延迟是否换来了真实答案质量收益。

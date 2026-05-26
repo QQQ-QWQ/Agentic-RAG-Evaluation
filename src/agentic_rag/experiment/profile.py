@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 TokenizerName = Literal["bigram", "jieba", "default"]
+FusionName = Literal["score", "rrf"]
 
 
 def _coerce_bool(value: Any, default: bool) -> bool:
@@ -38,6 +39,17 @@ class RunProfile:
     rerank_backend: str = "llm"
     rerank_pool_size: int = 20
     context_neighbor_chunks: int = 0
+    context_max_expanded_hits: int = 2
+    context_max_chars: int = 6000
+
+    multi_query_fusion: FusionName = "score"
+    multi_query_top_k: int = 8
+    max_retrieval_queries: int = 0
+    rrf_k: int = 60
+
+    use_evidence_grader: bool = False
+    evidence_grader_backend: str = "llm"
+    evidence_grader_max_chunks: int = 8
 
     dense_weight: float = 0.6
     bm25_weight: float = 0.4
@@ -101,6 +113,26 @@ def merge_profile_dict(base: RunProfile, data: Mapping[str, Any]) -> None:
         base.rerank_pool_size = int(data["rerank_pool_size"])
     if "context_neighbor_chunks" in data:
         base.context_neighbor_chunks = int(data["context_neighbor_chunks"])
+    if "context_max_expanded_hits" in data:
+        base.context_max_expanded_hits = int(data["context_max_expanded_hits"])
+    if "context_max_chars" in data:
+        base.context_max_chars = int(data["context_max_chars"])
+    if "multi_query_fusion" in data:
+        fusion = str(data["multi_query_fusion"]).strip().lower()
+        if fusion in ("score", "rrf"):
+            base.multi_query_fusion = fusion  # type: ignore[assignment]
+    if "multi_query_top_k" in data:
+        base.multi_query_top_k = int(data["multi_query_top_k"])
+    if "max_retrieval_queries" in data:
+        base.max_retrieval_queries = int(data["max_retrieval_queries"])
+    if "rrf_k" in data:
+        base.rrf_k = int(data["rrf_k"])
+    if "use_evidence_grader" in data:
+        base.use_evidence_grader = _coerce_bool(data["use_evidence_grader"], False)
+    if "evidence_grader_backend" in data:
+        base.evidence_grader_backend = str(data["evidence_grader_backend"]).strip().lower()
+    if "evidence_grader_max_chunks" in data:
+        base.evidence_grader_max_chunks = int(data["evidence_grader_max_chunks"])
     if "question_id" in data:
         base.question_id = str(data["question_id"])
     if "rewrite_prompt_file" in data and data["rewrite_prompt_file"]:
@@ -146,6 +178,26 @@ def profile_from_yaml_dict(data: Mapping[str, Any]) -> RunProfile:
             p.rerank_pool_size = int(r["rerank_pool_size"])
         if "context_neighbor_chunks" in r:
             p.context_neighbor_chunks = int(r["context_neighbor_chunks"])
+        if "context_max_expanded_hits" in r:
+            p.context_max_expanded_hits = int(r["context_max_expanded_hits"])
+        if "context_max_chars" in r:
+            p.context_max_chars = int(r["context_max_chars"])
+        if "multi_query_fusion" in r:
+            fusion = str(r["multi_query_fusion"]).strip().lower()
+            if fusion in ("score", "rrf"):
+                p.multi_query_fusion = fusion  # type: ignore[assignment]
+        if "multi_query_top_k" in r:
+            p.multi_query_top_k = int(r["multi_query_top_k"])
+        if "max_retrieval_queries" in r:
+            p.max_retrieval_queries = int(r["max_retrieval_queries"])
+        if "rrf_k" in r:
+            p.rrf_k = int(r["rrf_k"])
+        if "use_evidence_grader" in r:
+            p.use_evidence_grader = _coerce_bool(r["use_evidence_grader"], False)
+        if "evidence_grader_backend" in r:
+            p.evidence_grader_backend = str(r["evidence_grader_backend"]).strip().lower()
+        if "evidence_grader_max_chunks" in r:
+            p.evidence_grader_max_chunks = int(r["evidence_grader_max_chunks"])
     if "query_rewrite" in data and isinstance(data["query_rewrite"], dict):
         qr = data["query_rewrite"]
         if "prompt_file" in qr and qr["prompt_file"]:

@@ -24,7 +24,7 @@ def test_expected_path_c3_goes_orchestrated():
         tier="c3",
     )
     assert r.mode == "c3_orchestrated"
-    assert r.max_total_rag_calls == 24
+    assert r.max_total_rag_calls == 2
 
 
 def test_tool_on_c4_tier():
@@ -59,3 +59,26 @@ def test_adaptive_disabled_forces_c3():
         enable_adaptive_routing=False,
     )
     assert r.mode == "c3_orchestrated"
+    assert r.max_total_rag_calls == 1
+
+
+def test_simple_qa_routes_to_c2_when_adaptive_enabled():
+    r = resolve_route(
+        task_type="simple_qa",
+        difficulty="easy",
+        expected_path="C3",
+        tier="c3",
+    )
+    assert r.mode == "c2_kb"
+    assert r.rag_preset == "c0_naive"
+
+
+def test_multi_doc_c3_budget_is_three_calls():
+    r = resolve_route(
+        task_type="multi_doc",
+        difficulty="hard",
+        expected_path="C3",
+        tier="c3",
+    )
+    assert r.mode == "c3_orchestrated"
+    assert r.max_total_rag_calls == 3

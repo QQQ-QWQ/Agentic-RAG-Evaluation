@@ -29,6 +29,12 @@ RAG_SUBAGENT_SPECS: tuple[tuple[str, str, str], ...] = (
         "【C2 检索子代理】混合检索 + rerank + 邻接上下文扩展。适合多证据、对比、综述题；"
         "多证据/对比题优先；同一问可串行 2–3 次检索。禁止把多道小题塞进一次 tool 并行调用。",
     ),
+    (
+        "rag_subagent_c3_lite",
+        "c3_lite_v2",
+        "【C3-lite 检索子代理】多查询 RRF 融合 + rerank + Evidence Grader；"
+        "适合 fuzzy_query、multi_doc 和需要更稳引用的复杂知识题。",
+    ),
 )
 
 SUBAGENT_TOOL_NAMES = frozenset(name for name, _, _ in RAG_SUBAGENT_SPECS)

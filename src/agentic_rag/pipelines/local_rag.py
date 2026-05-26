@@ -21,7 +21,11 @@ from agentic_rag.schemas import EvidenceChunk, RewriteResult
 from agentic_rag.rag.bm25 import BM25Index, chinese_bigram_tokenize
 from agentic_rag.rag.chroma_store import persist_index, try_load_index
 from agentic_rag.rag.context_expand import expand_hits_with_neighbors
-from agentic_rag.rag.fusion import fuse_dense_bm25
+from agentic_rag.rag.evidence_grader import (
+    filter_hits_by_grades,
+    grade_evidence_chunks,
+)
+from agentic_rag.rag.fusion import fuse_dense_bm25, reciprocal_rank_fusion
 from agentic_rag.rag.rerank import rerank_hits
 from agentic_rag.rag.simple import SimpleVectorIndex, chunk_text, cosine_sim
 
@@ -135,8 +139,13 @@ def _now_run_id(prefix: str) -> str:
 def merge_evidence_hits(
     hit_groups: list[list[EvidenceChunk]],
     top_k: int,
+    *,
+    method: str = "score",
+    rrf_k: int = 60,
 ) -> list[EvidenceChunk]:
-    """多路检索结果按 chunk_id 取最高分后截断为 top_k。"""
+    """多路检索结果按 chunk_id 取最高分或 RRF 融合后截断为 top_k。"""
+    if (method or "score").strip().lower() == "rrf":
+        return reciprocal_rank_fusion(hit_groups, top_k=top_k, rrf_k=rrf_k)
     return _merge_hits(hit_groups, top_k=top_k)
 
 
@@ -176,6 +185,9 @@ def retrieve_with_index(
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
     allowed_doc_ids: frozenset[str] | None = None,
+    multi_query_fusion: str = "score",
+    multi_query_top_k: int = 8,
+    rrf_k: int = 60,
 ) -> tuple[list[EvidenceChunk], dict[str, int], dict[str, Any]]:
     """
     检索：默认 **混合检索**（稠密余弦 + BM25），两路分数分别 min-max 归一化后按权重加权求和。
@@ -194,10 +206,11 @@ def retrieve_with_index(
     source = str(getattr(index, "source", ""))
     chunk_metadata = getattr(index, "chunk_metadata", None)
     tokenize = bm25_tokenize or chinese_bigram_tokenize
-    for query in queries:
-        query_text = query.strip()
-        if not query_text:
-            continue
+    fusion_method = (multi_query_fusion or "score").strip().lower()
+    query_texts = [q.strip() for q in queries if q and q.strip()]
+    use_rrf = fusion_method == "rrf" and len(query_texts) > 1
+    effective_top_k = max(top_k, int(multi_query_top_k or top_k)) if use_rrf else top_k
+    for query_text in query_texts:
         qv = embed_texts(
             [query_text],
             is_query=True,
@@ -249,7 +262,7 @@ def retrieve_with_index(
                 )
             )
         scored.sort(key=lambda item: item.score, reverse=True)
-        if rerank:
+        if rerank and not use_rrf:
             pool_cap = max(top_k, min(rerank_pool_size, len(scored)))
             pool = scored[:pool_cap]
             pool, usage = rerank_hits(
@@ -261,9 +274,29 @@ def retrieve_with_index(
             for key, val in usage.items():
                 rerank_usage_total[key] = rerank_usage_total.get(key, 0) + val
         else:
-            pool = scored[:top_k]
+            pool = scored[:effective_top_k]
         hit_groups.append(pool)
-    merged = merge_evidence_hits(hit_groups, top_k=top_k)
+    if use_rrf:
+        fused_pool_size = max(top_k, min(rerank_pool_size, sum(len(g) for g in hit_groups)))
+        fused_pool = merge_evidence_hits(
+            hit_groups,
+            top_k=fused_pool_size,
+            method="rrf",
+            rrf_k=rrf_k,
+        )
+        if rerank:
+            merged, usage = rerank_hits(
+                "\n".join(query_texts),
+                fused_pool,
+                top_k=top_k,
+                backend=rerank_backend,
+            )
+            for key, val in usage.items():
+                rerank_usage_total[key] = rerank_usage_total.get(key, 0) + val
+        else:
+            merged = fused_pool[:top_k]
+    else:
+        merged = merge_evidence_hits(hit_groups, top_k=top_k)
     ark_bundle: dict[str, Any] = {
         "prompt_tokens": int(ark_usage_acc.get("prompt_tokens") or 0),
         "completion_tokens": int(ark_usage_acc.get("completion_tokens") or 0),
@@ -286,6 +319,9 @@ def retrieve_merged_from_indexes(
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
     allowed_doc_ids: frozenset[str] | None = None,
+    multi_query_fusion: str = "score",
+    multi_query_top_k: int = 8,
+    rrf_k: int = 60,
 ) -> tuple[list[EvidenceChunk], dict[str, int], dict[str, Any]]:
     """
     对多个索引分别检索，再按 chunk_id 融合为统一 top_k（用于全库 + 会话临时索引）。
@@ -309,6 +345,9 @@ def retrieve_merged_from_indexes(
             rerank_backend=rerank_backend,
             rerank_pool_size=rerank_pool_size,
             allowed_doc_ids=allowed_doc_ids,
+            multi_query_fusion=multi_query_fusion,
+            multi_query_top_k=multi_query_top_k,
+            rrf_k=rrf_k,
         )
         hit_groups.append(hits)
         for key, val in rerank_usage.items():
@@ -317,7 +356,12 @@ def retrieve_merged_from_indexes(
             ark_usage_acc[key] = ark_usage_acc.get(key, 0) + int(
                 ark_bundle.get(key) or 0
             )
-    merged = merge_evidence_hits(hit_groups, top_k=top_k)
+    merged = merge_evidence_hits(
+        hit_groups,
+        top_k=top_k,
+        method=multi_query_fusion,
+        rrf_k=rrf_k,
+    )
     ark_out: dict[str, Any] = {
         "prompt_tokens": int(ark_usage_acc.get("prompt_tokens") or 0),
         "completion_tokens": int(ark_usage_acc.get("completion_tokens") or 0),
@@ -416,6 +460,28 @@ def build_context_expansion_summary(hits: list[EvidenceChunk]) -> list[dict[str,
     ]
 
 
+def _apply_evidence_grader(
+    question: str,
+    hits: list[EvidenceChunk],
+    *,
+    task_type: str = "",
+    enabled: bool = False,
+    backend: str = "llm",
+    max_chunks: int = 8,
+) -> tuple[list[EvidenceChunk], list[dict[str, Any]], dict[str, int]]:
+    if not enabled or not hits:
+        return hits, [], {}
+    grades, usage = grade_evidence_chunks(
+        question,
+        hits,
+        task_type=task_type,
+        backend=backend,
+        max_chunks=max_chunks,
+    )
+    filtered = filter_hits_by_grades(hits, grades, task_type=task_type)
+    return filtered, [g.to_dict() for g in grades], usage
+
+
 def run_c0_with_index(
     index: SimpleVectorIndex,
     question: str,
@@ -433,7 +499,16 @@ def run_c0_with_index(
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
     context_neighbor_chunks: int = 0,
+    context_max_expanded_hits: int = 2,
+    context_max_chars: int = 6000,
     allowed_doc_ids: frozenset[str] | None = None,
+    multi_query_fusion: str = "score",
+    multi_query_top_k: int = 8,
+    max_retrieval_queries: int = 0,
+    rrf_k: int = 60,
+    use_evidence_grader: bool = False,
+    evidence_grader_backend: str = "llm",
+    evidence_grader_max_chunks: int = 8,
 ) -> dict:
     started = time.perf_counter()
     error = ""
@@ -442,6 +517,8 @@ def run_c0_with_index(
     answer_usage: dict[str, int] = {}
     rerank_usage: dict[str, int] = {}
     ark_embedding_usage: dict[str, Any] = {}
+    evidence_grader_usage: dict[str, int] = {}
+    evidence_grades: list[dict[str, Any]] = []
     retrieved_chunk_ids: list[str] = []
     try:
         hits, rerank_usage, ark_embedding_usage = retrieve_with_index(
@@ -456,6 +533,9 @@ def run_c0_with_index(
             rerank_backend=rerank_backend,
             rerank_pool_size=rerank_pool_size,
             allowed_doc_ids=allowed_doc_ids,
+            multi_query_fusion=multi_query_fusion,
+            multi_query_top_k=multi_query_top_k,
+            rrf_k=rrf_k,
         )
         retrieved_chunk_ids = _hit_chunk_ids(hits)
         hits = expand_hits_with_neighbors(
@@ -465,6 +545,16 @@ def run_c0_with_index(
             selective=context_neighbor_chunks > 0,
             task_type=task_type,
             question=question,
+            max_expanded_hits=context_max_expanded_hits,
+            max_context_chars=context_max_chars,
+        )
+        hits, evidence_grades, evidence_grader_usage = _apply_evidence_grader(
+            question,
+            hits,
+            task_type=task_type,
+            enabled=use_evidence_grader,
+            backend=evidence_grader_backend,
+            max_chunks=evidence_grader_max_chunks,
         )
         answer, answer_usage = generate_answer_from_hits(
             question,
@@ -481,9 +571,15 @@ def run_c0_with_index(
         "question_id": question_id,
         "original_query": question,
         "retrieval_queries": [question],
+        "sub_queries": [question],
         "retrieved_chunks": [hit.to_dict() for hit in hits],
-        "retrieved_chunk_ids": retrieved_chunk_ids if hits else [],
+        "retrieved_chunk_ids": retrieved_chunk_ids,
         "expanded_chunk_ids": _expanded_context_chunk_ids(hits),
+        "multi_query_fusion": multi_query_fusion,
+        "rrf_input_count": multi_query_top_k if multi_query_fusion == "rrf" else 0,
+        "rrf_output_chunk_ids": retrieved_chunk_ids if multi_query_fusion == "rrf" else [],
+        "evidence_grades": evidence_grades,
+        "evidence_grader_kept_chunk_ids": _hit_chunk_ids(hits),
         "answer": answer,
         "citations": citations,
         "final_citation_chunk_ids": _citation_chunk_ids(citations),
@@ -492,6 +588,7 @@ def run_c0_with_index(
         "token_usage": {
             "ark_volcengine_embedding": ark_embedding_usage,
             "rerank": rerank_usage,
+            "evidence_grader": evidence_grader_usage,
             "answer_generation": answer_usage,
         },
         "token_cost": None,
@@ -521,7 +618,16 @@ def run_c1_with_index(
     rerank_backend: str = "llm",
     rerank_pool_size: int = 20,
     context_neighbor_chunks: int = 0,
+    context_max_expanded_hits: int = 2,
+    context_max_chars: int = 6000,
     allowed_doc_ids: frozenset[str] | None = None,
+    multi_query_fusion: str = "score",
+    multi_query_top_k: int = 8,
+    max_retrieval_queries: int = 0,
+    rrf_k: int = 60,
+    use_evidence_grader: bool = False,
+    evidence_grader_backend: str = "llm",
+    evidence_grader_max_chunks: int = 8,
 ) -> dict:
     started = time.perf_counter()
     error = ""
@@ -536,10 +642,16 @@ def run_c1_with_index(
     answer_usage: dict[str, int] = {}
     rerank_usage: dict[str, int] = {}
     ark_embedding_usage = {}
+    evidence_grader_usage: dict[str, int] = {}
+    evidence_grades: list[dict[str, Any]] = []
     retrieved_chunk_ids: list[str] = []
     try:
         rewrite_result = rewrite_query(question, prompt_file=prompt_file)
-        retrieval_queries = build_retrieval_queries(question, rewrite_result)
+        retrieval_queries = build_retrieval_queries(
+            question,
+            rewrite_result,
+            max_queries=max_retrieval_queries,
+        )
         hits, rerank_usage, ark_embedding_usage = retrieve_with_index(
             index,
             retrieval_queries,
@@ -552,6 +664,9 @@ def run_c1_with_index(
             rerank_backend=rerank_backend,
             rerank_pool_size=rerank_pool_size,
             allowed_doc_ids=allowed_doc_ids,
+            multi_query_fusion=multi_query_fusion,
+            multi_query_top_k=multi_query_top_k,
+            rrf_k=rrf_k,
         )
         retrieved_chunk_ids = _hit_chunk_ids(hits)
         hits = expand_hits_with_neighbors(
@@ -561,6 +676,16 @@ def run_c1_with_index(
             selective=context_neighbor_chunks > 0,
             task_type=task_type,
             question="\n".join(retrieval_queries),
+            max_expanded_hits=context_max_expanded_hits,
+            max_context_chars=context_max_chars,
+        )
+        hits, evidence_grades, evidence_grader_usage = _apply_evidence_grader(
+            question,
+            hits,
+            task_type=task_type,
+            enabled=use_evidence_grader,
+            backend=evidence_grader_backend,
+            max_chunks=evidence_grader_max_chunks,
         )
         answer, answer_usage = generate_answer_from_hits(
             question,
@@ -583,9 +708,19 @@ def run_c1_with_index(
         "rewritten_query": rewrite_result.rewritten_query,
         "rewritten_queries": rewrite_result.rewritten_queries,
         "retrieval_queries": retrieval_queries,
+        "sub_queries": retrieval_queries,
         "retrieved_chunks": [hit.to_dict() for hit in hits],
-        "retrieved_chunk_ids": retrieved_chunk_ids if hits else [],
+        "retrieved_chunk_ids": retrieved_chunk_ids,
         "expanded_chunk_ids": _expanded_context_chunk_ids(hits),
+        "multi_query_fusion": multi_query_fusion,
+        "rrf_input_count": (
+            len(retrieval_queries) * multi_query_top_k
+            if multi_query_fusion == "rrf"
+            else 0
+        ),
+        "rrf_output_chunk_ids": retrieved_chunk_ids if multi_query_fusion == "rrf" else [],
+        "evidence_grades": evidence_grades,
+        "evidence_grader_kept_chunk_ids": _hit_chunk_ids(hits),
         "answer": answer,
         "query_rewrite_model_raw": rewrite_result.raw_output,
         "citations": citations,
@@ -596,6 +731,7 @@ def run_c1_with_index(
             "ark_volcengine_embedding": ark_embedding_usage,
             "query_rewrite": rewrite_result.token_usage,
             "rerank": rerank_usage,
+            "evidence_grader": evidence_grader_usage,
             "answer_generation": answer_usage,
         },
         "token_cost": None,

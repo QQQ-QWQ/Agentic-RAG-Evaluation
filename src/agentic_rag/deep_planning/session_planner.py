@@ -317,6 +317,7 @@ def compose_layer2_user_message(
     use_knowledge_base: bool = True,
     kb_execution_notes: str | None = None,
     enable_c4_tools: bool = True,
+    enable_c3_conservative_optimization: bool = False,
 ) -> str:
     """拼第二层 HumanMessage：嵌入第一层规划；可选附加编排系统备注（研判重试等）。"""
     pipes = ", ".join(plan.suggested_pipelines) if plan.suggested_pipelines else "(由你自选)"
@@ -375,6 +376,29 @@ def compose_layer2_user_message(
         kb_tool_line = ""
         parsed_block = ""
         web_line = ""
+    conservative_block = ""
+    if enable_c3_conservative_optimization and not enable_c4_tools:
+        conservative_block = (
+            "\n【C3 保守优化规则】\n"
+            "- 不要重复检索同一问题；若已有证据足够回答，应停止检索并整合答案。\n"
+            "- 最终答案只保留直接支撑关键结论的引用；每条关键结论最多 1-2 个 citation。\n"
+            "- 不要把所有检索到的 chunk 都塞进最终引用。\n"
+            "- 用 3-5 条关键结论组织答案；没有证据支撑的结论应删除或写明资料不足。\n"
+        )
+    if enable_c3_conservative_optimization and not enable_c4_tools:
+        conservative_block += (
+            "[C3 conservative execution rules]\n"
+            "- Prefer rag_subagent_c3_lite for complex fuzzy or multi-document questions.\n"
+            "- Do not run multiple near-duplicate RAG queries; stop when a new query adds no new useful evidence.\n"
+            "- Use only directly supporting chunks in final citations. Do not cite every related chunk.\n"
+            "- If evidence is partial, answer the supported part and mark the uncertain part instead of refusing the whole answer.\n"
+            "- Before answering, create an internal required-item coverage checklist from the user question. Examples: Self-RAG/CRAG/A-RAG; RAGFlow/Dify/FastGPT/QAnything; paper 2501.09136/paper 2603.07379.\n"
+            "- For every required item, decide supported/partial/missing from retrieved evidence. Cover every item in the final answer; if evidence is missing for one item, say that item has insufficient evidence instead of omitting it or refusing the whole answer.\n"
+            "- Build an internal evidence table with columns required_item, supporting_chunk_id, support_status, answer_point. The final answer must follow this table, but the table itself does not need to be shown.\n"
+            "- Write final answers in claim-first form. Each core claim must cite the single most direct chunk id, with at most 1-2 citations per claim.\n"
+            "- Citation budget: single-object answers normally use 1-3 citations; comparison or multi-document answers normally use 3-6 citations. Remove background citations before removing required-item coverage.\n"
+            "- More retrieved evidence does not imply permission to make stronger claims. If evidence only partially supports an item, phrase the answer as partial support.\n"
+        )
     return (
         "【第二层接入 · 第一层规划结果】\n"
         f"- 任务摘要：{plan.task_summary}\n"
@@ -393,6 +417,7 @@ def compose_layer2_user_message(
         f"{tool_hint}\n"
         f"{web_line}"
         f"{kb_tool_line}"
+        f"{conservative_block}"
         + (
             f"\n【系统侧·知识库与入库（以 documents.csv 为准）】\n{kb_execution_notes.strip()}\n"
             if kb_execution_notes and kb_execution_notes.strip()

@@ -237,6 +237,7 @@ def build_retrieval_queries(
     rewrite_result: RewriteResult | dict[str, Any],
     *,
     keep_original_query: bool = True,
+    max_queries: int = 0,
 ) -> list[str]:
     if isinstance(rewrite_result, RewriteResult):
         need_rewrite = rewrite_result.need_rewrite
@@ -260,4 +261,6 @@ def build_retrieval_queries(
                 queries.append(candidate)
     if not queries and original:
         queries.append(original)
+    if max_queries and max_queries > 0:
+        queries = queries[:max_queries]
     return queries

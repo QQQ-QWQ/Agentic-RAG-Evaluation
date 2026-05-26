@@ -80,6 +80,8 @@ class C34BatchReport:
     tier: str = "c3"
     split: str = ""
     planning_rewrite_enabled: bool = False
+    c3_conservative_opt_enabled: bool = False
+    force_rag_preset: str = ""
     result_csv: str = ""
     run_environment: dict[str, Any] = field(default_factory=dict)
     tasks: list[C34BatchTaskResult] = field(default_factory=list)
@@ -171,6 +173,7 @@ def _orchestration_for_tier(
     use_rag_subagent_tools: bool | None = None,
     max_rag_tool_calls_per_round: int | None = None,
     enable_adaptive_routing: bool = True,
+    enable_c3_conservative_optimization: bool = False,
 ) -> OrchestrationConfig:
     enable_c4 = tier == "c4"
     config = OrchestrationConfig(
@@ -178,6 +181,7 @@ def _orchestration_for_tier(
         enable_sandbox_tools=enable_c4 and enable_sandbox,
         enable_planning_query_rewrite=enable_planning_rewrite,
         enable_adaptive_routing=enable_adaptive_routing,
+        enable_c3_conservative_optimization=enable_c3_conservative_optimization,
     )
     if use_rag_subagent_tools is not None:
         config.use_rag_subagent_tools = bool(use_rag_subagent_tools)
@@ -214,11 +218,22 @@ C34_RESULT_FIELDS = [
     "plan_generated",
     "needs_retrieval_tools",
     "suggested_pipelines",
+    "sub_queries",
     "rag_query_count",
     "pipeline_mentions",
     "retrieved_doc_ids",
     "retrieved_chunk_ids",
+    "expanded_chunk_ids",
     "final_citation_chunk_ids",
+    "multi_query_fusion",
+    "rrf_input_count",
+    "rrf_output_chunk_ids",
+    "evidence_grader_kept_chunk_ids",
+    "support_verdict",
+    "unsupported_claims",
+    "missing_required_items",
+    "citation_mismatches",
+    "revision_instruction",
     "gold_doc_count",
     "gold_doc_covered",
     "gold_doc_coverage",
@@ -231,6 +246,10 @@ C34_RESULT_FIELDS = [
     "execution_route",
     "route_reason",
     "rag_pipeline_preset",
+    "c3_conservative_opt_enabled",
+    "final_citation_count",
+    "duplicate_rag_query_count",
+    "rag_query_blocked_count",
 ]
 
 
@@ -403,28 +422,78 @@ def _trace_path(session_id: str) -> str:
 
 def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
     plan_payload: dict[str, Any] = {}
+    judge_payload: dict[str, Any] = {}
     rag_events: list[dict[str, Any]] = []
     tool_counts: dict[str, int] = {}
+    duplicate_rag_query_count = 0
+    rag_query_blocked_count = 0
     for row in rows:
         event = str(row.get("event") or "")
         payload = row.get("payload")
         if event == "layer1_plan" and isinstance(payload, dict) and not plan_payload:
             plan_payload = payload
+        if event == "layer3_judge" and isinstance(payload, dict):
+            judge_payload = payload
         if event == "rag_query_result" and isinstance(payload, dict):
             rag_events.append(payload)
         if event == "tool_invoke_start" and isinstance(payload, dict):
             tname = str(payload.get("tool") or payload.get("name") or "").strip()
             if tname:
                 tool_counts[tname] = tool_counts.get(tname, 0) + 1
+        if event == "tool_invoke_end" and isinstance(payload, dict):
+            preview = str(payload.get("output_preview") or "").strip()
+            try:
+                data = json.loads(preview)
+            except json.JSONDecodeError:
+                data = {}
+            if isinstance(data, dict):
+                err = str(data.get("error") or "")
+                if err in {
+                    "rag_duplicate_query_blocked",
+                    "rag_tool_quota_exceeded",
+                    "rag_session_quota_exceeded",
+                }:
+                    rag_query_blocked_count += 1
+                if err == "rag_duplicate_query_blocked":
+                    duplicate_rag_query_count += 1
 
     pipelines: list[str] = []
+    sub_queries: list[str] = []
     doc_ids: list[str] = []
     chunk_ids: list[str] = []
+    expanded_chunk_ids: list[str] = []
+    rrf_output_chunk_ids: list[str] = []
+    evidence_grader_kept_chunk_ids: list[str] = []
+    multi_query_fusions: list[str] = []
     citations: list[Any] = []
+    rrf_input_count = 0
     for payload in rag_events:
         pipeline = str(payload.get("pipeline") or "").strip()
         if pipeline:
             pipelines.append(pipeline)
+        fusion = str(payload.get("multi_query_fusion") or "").strip()
+        if fusion:
+            multi_query_fusions.append(fusion)
+        try:
+            rrf_input_count += int(payload.get("rrf_input_count") or 0)
+        except (TypeError, ValueError):
+            pass
+        for query in payload.get("sub_queries") or payload.get("retrieval_queries") or []:
+            q = str(query).strip()
+            if q:
+                sub_queries.append(q)
+        for chunk_id in payload.get("expanded_chunk_ids") or []:
+            cid = str(chunk_id).strip()
+            if cid:
+                expanded_chunk_ids.append(cid)
+        for chunk_id in payload.get("rrf_output_chunk_ids") or []:
+            cid = str(chunk_id).strip()
+            if cid:
+                rrf_output_chunk_ids.append(cid)
+        for chunk_id in payload.get("evidence_grader_kept_chunk_ids") or []:
+            cid = str(chunk_id).strip()
+            if cid:
+                evidence_grader_kept_chunk_ids.append(cid)
         for chunk in payload.get("retrieved_chunks") or []:
             if not isinstance(chunk, dict):
                 continue
@@ -442,12 +511,25 @@ def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "plan_generated": bool(plan_payload),
         "needs_retrieval_tools": plan_payload.get("needs_retrieval_tools", ""),
         "suggested_pipelines": _unique([str(x) for x in plan_payload.get("suggested_pipelines") or []]),
+        "sub_queries": _unique(sub_queries),
         "rag_query_count": len(rag_events),
         "tool_invoke_counts": tool_counts,
         "pipeline_mentions": _unique(pipelines),
         "retrieved_doc_ids": _unique(doc_ids),
         "retrieved_chunk_ids": _unique(chunk_ids),
+        "expanded_chunk_ids": _unique(expanded_chunk_ids),
+        "multi_query_fusion": _unique(multi_query_fusions),
+        "rrf_input_count": rrf_input_count,
+        "rrf_output_chunk_ids": _unique(rrf_output_chunk_ids),
+        "evidence_grader_kept_chunk_ids": _unique(evidence_grader_kept_chunk_ids),
         "citations": citations,
+        "support_verdict": judge_payload.get("support_verdict", ""),
+        "unsupported_claims": judge_payload.get("unsupported_claims", []),
+        "missing_required_items": judge_payload.get("missing_required_items", []),
+        "citation_mismatches": judge_payload.get("citation_mismatches", []),
+        "revision_instruction": judge_payload.get("revision_instruction", ""),
+        "duplicate_rag_query_count": duplicate_rag_query_count,
+        "rag_query_blocked_count": rag_query_blocked_count,
     }
 
 
@@ -459,6 +541,7 @@ def _formal_result_row(
     planning_rewrite_enabled: bool,
     answer: str,
     route: RouteDecision | None = None,
+    c3_conservative_opt_enabled: bool = False,
 ) -> dict[str, Any]:
     trace = _summarize_trace(_load_trace_rows(row.session_id))
     gold_doc_ids = _split_ids((reference or {}).get("evidence_doc_id", ""))
@@ -489,11 +572,22 @@ def _formal_result_row(
         "plan_generated": trace["plan_generated"],
         "needs_retrieval_tools": trace["needs_retrieval_tools"],
         "suggested_pipelines": _json_cell(trace["suggested_pipelines"]),
+        "sub_queries": _json_cell(trace["sub_queries"]),
         "rag_query_count": trace["rag_query_count"],
         "pipeline_mentions": _json_cell(trace["pipeline_mentions"]),
         "retrieved_doc_ids": _json_cell(retrieved_doc_ids),
         "retrieved_chunk_ids": _json_cell(retrieved_chunk_ids),
+        "expanded_chunk_ids": _json_cell(trace["expanded_chunk_ids"]),
         "final_citation_chunk_ids": _json_cell(final_citation_chunk_ids),
+        "multi_query_fusion": _json_cell(trace["multi_query_fusion"]),
+        "rrf_input_count": trace["rrf_input_count"],
+        "rrf_output_chunk_ids": _json_cell(trace["rrf_output_chunk_ids"]),
+        "evidence_grader_kept_chunk_ids": _json_cell(trace["evidence_grader_kept_chunk_ids"]),
+        "support_verdict": trace["support_verdict"],
+        "unsupported_claims": _json_cell(trace["unsupported_claims"]),
+        "missing_required_items": _json_cell(trace["missing_required_items"]),
+        "citation_mismatches": _json_cell(trace["citation_mismatches"]),
+        "revision_instruction": trace["revision_instruction"],
         "gold_doc_count": gold_doc_count,
         "gold_doc_covered": gold_doc_covered,
         "gold_doc_coverage": round(gold_doc_covered / gold_doc_count, 4) if gold_doc_count else "",
@@ -506,6 +600,10 @@ def _formal_result_row(
         "execution_route": route.mode if route else "c3_orchestrated",
         "route_reason": route.reason if route else "",
         "rag_pipeline_preset": route.rag_preset if route else "",
+        "c3_conservative_opt_enabled": c3_conservative_opt_enabled,
+        "final_citation_count": len(final_citation_chunk_ids),
+        "duplicate_rag_query_count": trace["duplicate_rag_query_count"],
+        "rag_query_blocked_count": trace["rag_query_blocked_count"],
     }
 
 
@@ -591,6 +689,7 @@ def _formal_row_for_c2_kb(
     reference: dict[str, str] | None,
     planning_rewrite_enabled: bool,
     kb_raw: dict[str, Any] | None = None,
+    c3_conservative_opt_enabled: bool = False,
 ) -> dict[str, Any]:
     """C2 轻路径结果行（使用单次 RAG 返回的 chunk 列表）。"""
     if kb_raw:
@@ -599,6 +698,10 @@ def _formal_row_for_c2_kb(
         chunk_ids = _chunk_ids_in_text(row.answer)
         doc_ids = _unique([c.split("::")[0] for c in chunk_ids if "::" in c])
         citations = chunk_ids
+    sub_queries = (kb_raw or {}).get("sub_queries") or (kb_raw or {}).get("retrieval_queries") or []
+    expanded_chunk_ids = (kb_raw or {}).get("expanded_chunk_ids") or []
+    rrf_output_chunk_ids = (kb_raw or {}).get("rrf_output_chunk_ids") or []
+    evidence_kept_ids = (kb_raw or {}).get("evidence_grader_kept_chunk_ids") or []
     gold_doc_ids = _split_ids((reference or {}).get("evidence_doc_id") or "")
     gold_chunk_ids = _split_ids((reference or {}).get("evidence_chunk_id") or "")
     gold_doc_covered = sum(1 for d in gold_doc_ids if d in doc_ids)
@@ -616,11 +719,22 @@ def _formal_row_for_c2_kb(
         "plan_generated": False,
         "needs_retrieval_tools": True,
         "suggested_pipelines": _json_cell([route.rag_preset]),
+        "sub_queries": _json_cell(sub_queries),
         "rag_query_count": 1 if row.ok else 0,
         "pipeline_mentions": _json_cell([route.rag_preset]),
         "retrieved_doc_ids": _json_cell(doc_ids),
         "retrieved_chunk_ids": _json_cell(chunk_ids),
+        "expanded_chunk_ids": _json_cell(expanded_chunk_ids),
         "final_citation_chunk_ids": _json_cell(citations),
+        "multi_query_fusion": (kb_raw or {}).get("multi_query_fusion", ""),
+        "rrf_input_count": (kb_raw or {}).get("rrf_input_count", 0),
+        "rrf_output_chunk_ids": _json_cell(rrf_output_chunk_ids),
+        "evidence_grader_kept_chunk_ids": _json_cell(evidence_kept_ids),
+        "support_verdict": "",
+        "unsupported_claims": _json_cell([]),
+        "missing_required_items": _json_cell([]),
+        "citation_mismatches": _json_cell([]),
+        "revision_instruction": "",
         "gold_doc_count": len(gold_doc_ids),
         "gold_doc_covered": gold_doc_covered,
         "gold_doc_coverage": round(gold_doc_covered / len(gold_doc_ids), 4)
@@ -637,6 +751,10 @@ def _formal_row_for_c2_kb(
         "execution_route": route.mode,
         "route_reason": route.reason,
         "rag_pipeline_preset": route.rag_preset,
+        "c3_conservative_opt_enabled": c3_conservative_opt_enabled,
+        "final_citation_count": len(citations),
+        "duplicate_rag_query_count": 0,
+        "rag_query_blocked_count": 0,
     }
 
 
@@ -655,6 +773,9 @@ def run_c34_batch(
     use_rag_subagent_tools: bool | None = None,
     max_rag_tool_calls_per_round: int | None = None,
     enable_adaptive_routing: bool = True,
+    enable_c3_conservative_optimization: bool = False,
+    force_rag_preset: str | None = None,
+    result_csv: Path | None = None,
     log_dir: Path | None = None,
     continue_on_error: bool = True,
     stream_events_to_stdout: bool = False,
@@ -685,19 +806,22 @@ def run_c34_batch(
         use_rag_subagent_tools=use_rag_subagent_tools,
         max_rag_tool_calls_per_round=max_rag_tool_calls_per_round,
         enable_adaptive_routing=enable_adaptive_routing,
+        enable_c3_conservative_optimization=enable_c3_conservative_optimization,
     )
     repeat_n = max(1, int(repeat))
     out_dir = log_dir or _default_log_dir(tier)
     out_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = out_dir / "run_logs.jsonl"
     report_path = out_dir / "batch_report.json"
-    result_csv_path = _result_csv_path(tier, split)
+    result_csv_path = result_csv or _result_csv_path(tier, split)
 
     batch_session = new_audit_session_id()
     report = C34BatchReport(
         tier=tier,
         split=split,
         planning_rewrite_enabled=enable_planning_rewrite,
+        c3_conservative_opt_enabled=enable_c3_conservative_optimization,
+        force_rag_preset=(force_rag_preset or "").strip(),
         result_csv=str(result_csv_path),
         run_environment=_run_environment(),
     )
@@ -713,9 +837,11 @@ def run_c34_batch(
             "log_dir": str(out_dir),
             "result_csv": str(result_csv_path),
             "planning_rewrite_enabled": enable_planning_rewrite,
-            "max_orchestration_rounds": orch.max_orchestration_rounds,
-            "max_execute_retries_per_round": orch.max_execute_retries_per_round,
-            "use_rag_subagent_tools": orch.use_rag_subagent_tools,
+            "c3_conservative_opt_enabled": enable_c3_conservative_optimization,
+            "force_rag_preset": (force_rag_preset or "").strip(),
+            "max_orchestration_rounds": orch_base.max_orchestration_rounds,
+            "max_execute_retries_per_round": orch_base.max_execute_retries_per_round,
+            "use_rag_subagent_tools": orch_base.use_rag_subagent_tools,
             "max_rag_tool_calls_per_round": orch_base.max_rag_tool_calls_per_round,
             "enable_adaptive_routing": enable_adaptive_routing,
             "repeat": repeat_n,
@@ -754,6 +880,14 @@ def run_c34_batch(
             tier=tier,
             enable_adaptive_routing=enable_adaptive_routing,
         )
+        if force_rag_preset:
+            preset = force_rag_preset.strip().lower()
+            run_profile_for_preset(preset)
+            route = RouteDecision(
+                mode="c2_kb",
+                rag_preset=preset,
+                reason=f"force_rag_preset_{preset}",
+            )
         if stream_events_to_stdout:
             safe_print_console(
                 f"  [{task.question_id}] route={route.mode} "
@@ -779,9 +913,11 @@ def run_c34_batch(
                     enable_kb_inventory_hints=orch_base.enable_kb_inventory_hints,
                     use_rag_subagent_tools=orch_base.use_rag_subagent_tools,
                     enable_adaptive_routing=orch_base.enable_adaptive_routing,
+                    enable_c3_conservative_optimization=orch_base.enable_c3_conservative_optimization,
                     max_orchestration_rounds=orch_base.max_orchestration_rounds,
                     max_execute_retries_per_round=orch_base.max_execute_retries_per_round,
                     max_rag_tool_calls_per_round=orch_base.max_rag_tool_calls_per_round,
+                    max_total_rag_calls=orch_base.max_total_rag_calls,
                     prefer_complete_when_grounded=orch_base.prefer_complete_when_grounded,
                 )
                 apply_route_to_orchestration(orch, route, tier=tier)
@@ -867,6 +1003,7 @@ def run_c34_batch(
             "required_tool": task.required_tool,
             "note": task.note,
             "planning_rewrite_enabled": enable_planning_rewrite,
+            "c3_conservative_opt_enabled": enable_c3_conservative_optimization,
             "execution_route": route.mode,
             "route_reason": route.reason,
             "rag_pipeline_preset": route.rag_preset,
@@ -888,6 +1025,7 @@ def run_c34_batch(
                     reference=references.get(task.question_id),
                     planning_rewrite_enabled=enable_planning_rewrite,
                     kb_raw=kb_raw,
+                    c3_conservative_opt_enabled=enable_c3_conservative_optimization,
                 )
             )
         else:
@@ -899,6 +1037,7 @@ def run_c34_batch(
                     planning_rewrite_enabled=enable_planning_rewrite,
                     answer=row.answer,
                     route=route,
+                    c3_conservative_opt_enabled=enable_c3_conservative_optimization,
                 )
             )
         _write_result_csv(result_csv_path, formal_rows)

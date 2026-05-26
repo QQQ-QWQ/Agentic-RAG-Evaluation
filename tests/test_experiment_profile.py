@@ -21,6 +21,10 @@ def test_merge_profile_dict():
             "rerank_backend": "NONE",
             "rerank_pool_size": 15,
             "context_neighbor_chunks": 2,
+            "multi_query_fusion": "RRF",
+            "multi_query_top_k": 9,
+            "max_retrieval_queries": 3,
+            "use_evidence_grader": True,
         },
     )
     assert p.use_chroma_cache is False
@@ -29,6 +33,10 @@ def test_merge_profile_dict():
     assert p.rerank_backend == "none"
     assert p.rerank_pool_size == 15
     assert p.context_neighbor_chunks == 2
+    assert p.multi_query_fusion == "rrf"
+    assert p.multi_query_top_k == 9
+    assert p.max_retrieval_queries == 3
+    assert p.use_evidence_grader is True
 
 
 def test_load_yaml_modules(tmp_path: Path):
