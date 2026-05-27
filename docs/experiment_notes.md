@@ -2145,8 +2145,11 @@ incomplete_answer：Q013、Q017
    `archive/experiment_runs/c2_stage3_next_before_rollback_2026-05-27/`
 2. 将 C2 Stage3 代码口径回退为旧版 Stage3：
    `C2 Stage2 + context_neighbor_chunks=1`，不再给 `c2_stage3_context` 启用 Evidence Grader。
-3. 整理 C3-lite-next 30 题实验结果，并新增完整报告：
-   `docs/c3_lite_next_30_experiment_report.md`
+3. 整理 C3-lite-next 30 题实验结果，并新增优化方案与技术报告：
+   `docs/c3_lite_optimization_technical_report.md`
+
+补充说明：`docs/c3_lite_next_30_experiment_report.md` 仅作为结果记录，正式对外说明 C3 优化思路时应优先使用技术报告。
+技术报告已补充 Self-RAG、CRAG、LangGraph Self-RAG/CRAG、agentic-rag-for-dummies、RAGAS/ARES/RAGChecker 等参考思想，以及 C2/C3 30 题版本对比结果。Dify / RAGFlow 目前记录为 C5 横向参考计划，尚未写成已完成实验。
 
 ### 2. C2 Stage3 结论口径
 

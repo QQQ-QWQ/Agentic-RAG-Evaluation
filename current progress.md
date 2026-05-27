@@ -312,6 +312,7 @@ C3 低成本优化版 30 题完成 + C2 Stage3 边界分析 + C4 正式实验准
 - C2 Stage3 old 作为上下文扩展边界对照。
 - C2 Stage3 next 在 30 题上退化，已本地备份并从代码口径回退，不再作为正式增强方案。
 - C3-lite-next 完成 30 题实验，当前可作为 C3 主方案进入人工复核和报告整理阶段。
+- C3 优化方案与技术报告见 `docs/c3_lite_optimization_technical_report.md`；`docs/c3_lite_next_30_experiment_report.md` 仅作为结果记录。
 
 ### C2 Stage3 状态
 
