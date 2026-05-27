@@ -1,43 +1,218 @@
 # Topic4 Agentic RAG Evaluation 当前进度
 
-更新日期：2026-05-25
-当前主线：面向学习与知识服务任务的 Agentic RAG 技术增强与评测研究。
-文档职责：根目录 `README.md` 只保留开题报告正文与参考文献；本文件集中维护仓库运行方式、当前进度、阶段结论和下一步任务；`docs/` 保存长期规范、架构、实验记录和专题说明。
+更新日期：2026-05-27
+
+本文档用于同步仓库当前进度、阶段结论、运行入口、主要风险和下一步分工。  
+根目录 `README.md` 主要保留课题定位、参考文献和项目总览；本文档负责记录动态进度。  
+详细实验记录见 `docs/experiment_notes.md`，C3 优化技术说明见 `docs/c3_lite_optimization_technical_report.md`。
 
 ## 1. 当前阶段判断
 
 当前项目处于：
 
 ```text
-C2 主结论收尾 + C3/C4 批量评测准备 + 测试集扩充准备阶段
+C3 低成本优化版阶段性完成 + C2 Stage3 回退收口 + C4 正式实验准备阶段
 ```
 
-当前不是继续堆功能的阶段。主要工作应从“代码能跑”转为“结果可信”：补齐 C3/C4 批量日志、人工评分、失败案例和成本分析。
+当前重点已经不是继续堆功能，而是：
+
+- 固定 C2/C3 的正式结论口径；
+- 补齐人工评分与失败案例；
+- 开始 C4 工具调用任务的 smoke 与正式实验；
+- 后续再做 Benchmark 子集和 Dify / RAGFlow 横向参考。
+
+## 2. 模块状态总览
 
 | 模块 | 当前状态 | 阶段判断 |
 | --- | --- | --- |
-| C0 Naive RAG | 20 题批量与人评已完成 | 可阶段性冻结 |
-| C1 Query Rewrite RAG | 优化版 C1 已跑完 20 题 | 可阶段性冻结，但不能简单宣称优于 C0 |
-| C2 Stage1 Hybrid | 已完成复现与人评 | 可作为消融对照 |
-| C2 Stage2 Hybrid + Rerank | 已完成复现与人评 | 当前 C2 主结论，应优先冻结 |
-| C2 Stage3 Context Expansion | 固定扩展淘汰，选择性扩展保留 | 作为收益边界和失败案例分析，不作为主增益点 |
-| AI Judge | 多维评分脚本与 Prompt 已接入 | 只作为辅助评测，不替代人工评分 |
-| C3 Agentic Retrieval | **main_20 正式 batch 20/20 ok**（2026-05-25，李金航）；LLM judge 均值 0.85 | 待人工复核 Q007/Q013/Q016/Q017；C4 补工具题 |
-| C4 Tool-Augmented Agentic RAG | 工具链路与 batch 入口已通 | 需跑工具题 batch、补工具调用评分 |
-| Benchmark / Dify / RAGFlow | 未开始 | 暂缓，等 C3/C4 主线稳定后做参考对比 |
+| C0 Naive RAG | 已完成 20 题批量实验和人工评分 | 阶段性冻结 |
+| C1 Query Rewrite | 已完成优化版 C1 和 20 题批量实验 | 阶段性冻结 |
+| C2 Stage1 Hybrid | 已完成复现实验 | 作为 C2 消融对照 |
+| C2 Stage2 Hybrid + Rerank | 已完成复现实验和人工评分 | 当前 C2 主基线 |
+| C2 Stage3 Context Expansion | 当前代码已回退到旧版口径 | 仅作为上下文扩展边界对照 |
+| C3 Agentic Retrieval | C3-lite-next 已完成 30 题实验 | 当前 C3 主方案，待人工复核重点题 |
+| C4 Tool-Augmented Agentic RAG | 工具链路和 batch 入口已有基础 | 下一阶段重点 |
+| AI Judge | 多维评分脚本已接入 | 只能辅助，不能替代人工评分 |
+| Benchmark 子集 | 尚未正式开始 | C3/C4 稳定后再做 |
+| Dify / RAGFlow 横向参考 | 尚未正式开始 | C5 横向参考，不参与 C0-C4 消融 |
 
-## 2. 仓库运行入口
+## 3. C2 当前结论
 
-### 2.1 环境准备
+### 3.1 C2 主基线
 
-复制 `.env.example` 为 `.env` 并填写必要 Key：
+C2 当前主基线为：
+
+```text
+C2 Stage2 = C1 Query Rewrite + Hybrid Retrieval + Rerank
+```
+
+原因：
+
+- 相比 C0/C1，C2 Stage2 的检索质量和答案质量更稳定；
+- 相比 Stage3，Stage2 的成本更低、噪声更少；
+- 当前结论更适合作为后续 C3/C4 的对照基线。
+
+### 3.2 C2 Stage3 回退
+
+此前尝试过 C2 Stage3 next：在上下文扩展后叠加 Evidence Grader 和更小上下文预算。  
+30 题结果显示该版本退化：
+
+| 配置 | 成功题数 | 平均延迟 | Answer Correctness | Citation Accuracy | Faithfulness | 综合分 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| C2 Stage2 old | 30/30 | 21.2s | 0.683 | 0.667 | 0.950 | 0.738 |
+| C2 Stage3 old | 30/30 | 20.8s | 0.633 | 0.650 | 0.983 | 0.725 |
+| C2 Stage3 next | 30/30 | 26.0s | 0.533 | 0.617 | 0.950 | 0.658 |
+
+因此：
+
+- C2 Stage3 next 已本地备份；
+- `c2_stage3_context` 代码口径已回退；
+- C2 Stage3 后续只作为“上下文扩展边界分析”，不作为主增强结论。
+
+当前 C2 Stage3 代码口径：
+
+```text
+C2 Stage2 + context_neighbor_chunks=1
+use_evidence_grader=False
+context_max_expanded_hits=3
+context_max_chars=6000
+```
+
+本地备份目录：
+
+```text
+archive/experiment_runs/c2_stage3_next_before_rollback_2026-05-27/
+```
+
+该目录不提交 Git。
+
+## 4. C3 当前结论
+
+### 4.1 当前 C3 主方案
+
+当前 C3 主方案为：
+
+```text
+C3-lite-next
+```
+
+运行口径：
+
+```text
+--planning-rewrite
+--no-adaptive-route
+--c3-conservative-opt
+```
+
+说明：
+
+- 开启 planning rewrite，用于改善模糊题和复杂题的规划前理解；
+- 关闭 adaptive route，避免把“简单题走 C2”的收益误写成 C3 自身收益；
+- 开启 conservative opt，包含 RAG 查询预算、重复查询抑制、Evidence Grader、claim-citation binding 和 claim-level self-check。
+
+### 4.2 C3 优化内容
+
+C3-lite-next 的核心优化包括：
+
+- RAG 查询预算：避免旧版 C3 无限拆问题；
+- multi-query RRF：多子查询结果先去重融合，再进入 rerank / answer generation；
+- Evidence Grader：答案生成前过滤无关或背景证据；
+- required-items 覆盖清单：减少多对象题漏项；
+- claim-citation binding：要求核心 claim 绑定直接 citation；
+- claim-level self-check：输出 unsupported claims、missing required items、citation mismatches 和 revision instruction。
+
+完整技术说明：
+
+```text
+docs/c3_lite_optimization_technical_report.md
+```
+
+30 题实验结果记录：
+
+```text
+docs/c3_lite_next_30_experiment_report.md
+```
+
+### 4.3 C3 30 题结果
+
+| 配置 | 成功题数 | 平均延迟 | 平均 RAG 次数 | Answer Correctness | Citation Accuracy | Faithfulness | 综合分 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| C3 formal old | 30/30 | 156.7s | 10.87 | 0.767 | 0.750 | 0.950 | 0.808 |
+| C3 conservative old | 30/30 | 98.3s | 5.37 | 0.733 | 0.767 | 0.917 | 0.792 |
+| C3-lite-next | 30/30 | 41.6s | 1.60 | 0.750 | 0.717 | 0.967 | 0.796 |
+
+阶段性判断：
+
+- C3-lite-next 显著降低延迟和 RAG 调用次数；
+- 综合分基本保持旧版 C3 水平；
+- Answer Correctness 和 Faithfulness 提升；
+- Citation Accuracy 略降，主要原因是引用数量收缩，平均 citation 从旧版约 7.4 降到 3.67，更容易漏掉 gold chunk；
+- 这不是完全失败，而是从“重型宽引用 C3”转向“轻量聚焦 C3”的代价。
+
+后续不能只追求 Citation Accuracy 最高。应同时看：
+
+```text
+Answer Correctness
+Faithfulness
+Citation Accuracy
+Final Citation Count
+Latency
+RAG Query Count
+```
+
+理想目标是：答案正确、证据忠实、引用准确、引用数量适中、成本可接受。
+
+## 5. 参考项目与外部对照
+
+### 5.1 C3 技术机制参考
+
+| 来源 | 借鉴内容 | 本项目对应实现 |
+| --- | --- | --- |
+| Self-RAG | 按需检索、自我批判、证据支撑判断 | claim-level self-check |
+| CRAG | 文档相关性评估、检索纠错 | Evidence Grader |
+| LangGraph Self-RAG / CRAG | retrieve -> grade -> generate -> check 流程 | C3 分层编排 |
+| agentic-rag-for-dummies | 多查询、上下文压缩、自纠错、模块化 ARAG | 查询预算、RRF、证据压缩 |
+| RRF 检索融合思想 | 多查询结果去重融合 | multi-query RRF |
+
+### 5.2 评测思想参考
+
+| 来源 | 借鉴内容 | 本项目对应指标 |
+| --- | --- | --- |
+| RAGAS | faithfulness、answer correctness、context 指标 | Answer Correctness、Faithfulness、Citation Accuracy |
+| ARES | LLM 辅助评测 RAG 答案 | AI Judge |
+| RAGChecker | 检索错误、生成错误、证据错误拆分 | main problem / failure type |
+| RAGTruth | unsupported claim、错误拒答等问题分类 | unsupported_claims、over-refusal |
+
+### 5.3 Dify / RAGFlow
+
+Dify / RAGFlow 目前尚未完成正式横向实验，不能写成已完成对比。
+
+后续建议放在 C5：
+
+- 使用同一知识库；
+- 使用同一测试题；
+- 尽量使用同一模型；
+- 记录答案质量、引用可信度、响应延迟；
+- 不参与 C0-C4 模块消融，只作为市面/开源系统横向参考。
+
+## 6. 当前仓库运行入口
+
+### 6.1 环境准备
+
+```powershell
+uv sync
+uv sync --group agent
+uv run python main.py kb sync
+```
+
+`.env` 中至少需要：
 
 ```text
 ARK_API_KEY=your_key_here
 DEEPSEEK_API_KEY=your_key_here
 ```
 
-C4 网页、沙箱、写盘和 shell 可选：
+C4 工具链可选：
 
 ```text
 FIRECRAWL_API_KEY=...
@@ -48,325 +223,121 @@ SHELL_COMMAND_ENABLED=true
 SHELL_TIMEOUT_SEC=60
 ```
 
-安装依赖：
-
-```powershell
-uv sync
-uv sync --group agent
-uv run python main.py kb sync
-```
-
-注意：`.env`、`.venv/`、`runs/`、`archive/`、本地大体积索引和 API Key 不提交仓库。
-
-### 2.2 常用命令
+### 6.2 常用命令
 
 | 任务 | 命令 |
 | --- | --- |
-| 集成工作台 | `uv run python main.py` |
-| C3/C4 网页 Demo | `uv run python main.py client` | 默认端口 **7860** |
-| C3 仅检索 | `uv run python main.py client --c3` | |
-| C4 工具 + 沙箱 | `uv run python main.py client --c4 --sandbox` | |
-| 终端 C4 对话 | `uv run python main.py client --console --c4` | |
-| 查看日志（只读） | `uv run python main.py logs` | 默认端口 **7861**，可与 client 同时运行 |
-| C0/C1 批量 | `uv run python main.py experiment batch` |
-| C2 消融 | `uv run python main.py experiment c2 --phase all --limit 20` |
-| C3 smoke 批量 | `uv run python run_c34_batch_eval.py --tier c3 --split c3_smoke --verbose-events` |
-| C4 工具题批量 | `uv run python run_c34_batch_eval.py --tier c4 --split c4_tools --sandbox --verbose-events` |
-| 全量测试 | `uv run pytest` |
-| 代码检查 | `uv run ruff check .` |
+| 知识库同步 | `uv run python main.py kb sync` |
+| C0/C1 批量实验 | `uv run python main.py experiment batch` |
+| C2 三阶段消融 | `uv run python main.py experiment c2 --phase all --limit 20` |
+| C3 批量实验 | `uv run python run_c34_batch_eval.py --tier c3 --split ids --question-ids <ids>` |
+| C4 工具题实验 | `uv run python run_c34_batch_eval.py --tier c4 --split c4_tools --sandbox --verbose-events` |
+| AI Judge 评分 | `uv run python run_score_rag_multidim.py --results <csv> --questions <csv> --references <csv> --out <csv>` |
+| Gradio 客户端 | `uv run python main.py client` |
+| 日志查看页 | `uv run python main.py logs` |
+| 单元测试 | `uv run pytest -q` |
+| 静态检查 | `uv run ruff check .` |
 
-## 3. 代码仓库结构
+## 7. 当前主要风险
 
-```text
-topic4-ARAG-eval/
-├── README.md                  # 开题报告正文与参考文献，不再放运行进度
-├── current progress.md        # 当前进度、运行入口、下一步计划
-├── main.py                    # 统一 CLI 入口
-├── run_batch_experiments.py   # C0/C1 批量实验
-├── run_c2_retrieval_ablation.py
-├── run_c34_batch_eval.py      # C3/C4 批量评测
-├── run_score_rag_multidim.py  # 多维 AI Judge 辅助评分
-├── configs/                   # C0-C4 与消融配置
-├── prompts/                   # Query rewrite、self-check、judge 等 Prompt
-├── data/                      # raw / processed / testset
-├── src/agentic_rag/           # 项目核心代码
-├── docs/                      # 架构、规范、实验记录与专题文档
-├── tests/                     # 单元测试
-├── runs/                      # 本地实验输出，默认不提交
-└── archive/                   # 本地备份，默认不提交
-```
+### 7.1 人工评分仍需补齐
 
-核心代码结构：
-
-| 目录 | 作用 |
-| --- | --- |
-| `src/agentic_rag/documents/` | 文档解析、会话文档、传入文件检查 |
-| `src/agentic_rag/rag/` | 分块、向量索引、Chroma 持久化、上下文扩展 |
-| `src/agentic_rag/pipelines/` | C0-C2 本地 RAG 编排 |
-| `src/agentic_rag/experiment/` | C0-C4 批量实验、知识库同步、C3/C4 batch |
-| `src/agentic_rag/deep_planning/` | L1 规划、L2 Deep Agent、工具注册 |
-| `src/agentic_rag/orchestration/` | L1/L2/L3 编排循环、研判与重试 |
-| `src/agentic_rag/tools/` | C4 文件、计算器、表格、代码、网页、shell 工具 |
-| `src/agentic_rag/telemetry/` | 会话审计、trace、chat transcript |
-| `src/agentic_rag/evaluation/` | 人工/AI Judge 辅助评分 |
-
-## 4. 数据、知识库和测试集状态
-
-| 项目 | 当前状态 |
-| --- | --- |
-| 主测试集 | `data/testset/questions.csv`，Q001-Q020 |
-| 主参考答案 | `data/testset/references.csv` |
-| C3 候选题 | `data/testset/questions_c3_candidates.csv`，Q021-Q030 |
-| C3 候选参考 | `data/testset/references_c3_candidates.csv` |
-| 人工评分 | `manual_eval_c0_c1.csv`、`manual_eval_c2.csv` |
-| C3 main_20 LLM judge | `runs/results/c3_main_20_llm_judged.csv`（2026-05-25） |
-| C3/C4 人工评分 | main_20 待唐宁复核 `manual_eval_c3_formal.csv` Q001–Q020 |
-| 最终目标 | 自建测试集扩至 40-50 题，另补 10-15 条 Benchmark 参考样例 |
-
-当前索引口径：
+AI Judge 只能辅助判断，不能替代人工评分。  
+尤其是 C3-lite-next 的以下题需要人工复核：
 
 ```text
-C0/C1/C2 结论主要归因于自实现轻量检索、query rewrite、hybrid retrieval、rerank 和 context expansion 等模块。
-Chroma 当前主要用于全库持久化和缓存；若最终报告写“基于 Chroma 向量数据库”，需在同一知识库、测试集、embedding 和模型条件下复跑关键指标。
+Q005, Q006, Q012, Q015, Q023, Q027
 ```
 
-## 5. C0/C1 当前结论
+复核重点：
 
-| 配置 | 文档级命中 | 人工 Answer Correctness | 人工 Citation Accuracy | 判断 |
-| --- | ---: | ---: | ---: | --- |
-| C0 Naive RAG | 17/20 | 0.525 | 0.650 | 基线可冻结 |
-| C1 Query Rewrite RAG | 19/20 | 0.400 | 0.550 | 改善召回，但答案质量未稳定提升 |
+- 是否漏 required items；
+- claim 是否有直接 citation；
+- citation 是否只是相关但不支撑结论；
+- 是否把分类体系混淆；
+- 是否过度拒答或证据不足仍下结论。
 
-结论：C1 对模糊、口语化查询有帮助，但存在改写漂移和成本增加。报告中应写“C1 改善检索召回，但不必然改善最终答案”。
+### 7.2 C4 尚未正式完成
 
-## 6. C2 当前结论
+C4 工具链已有基础，但还没有形成完整正式实验结论。  
+后续必须明确：
 
-| 阶段 | 新增能力 | 人工 Answer Correctness | 人工 Citation Accuracy | 判断 |
-| --- | --- | ---: | ---: | --- |
-| Stage1 | Hybrid retrieval | 0.600 | 0.625 | 召回有收益，但证据排序不够稳定 |
-| Stage2 | Hybrid retrieval + rerank | 0.800 | 0.800 | 当前 C2 主结论 |
-| 旧 Stage3 | 固定 context expansion | 0.150 | 0.200 | 已淘汰 |
-| 新 Stage3 | 选择性 context expansion | 待人工评分 | 待人工评分 | 作为边界分析，不替代 Stage2 |
+- 哪些题是真正工具型题；
+- 是否成功选择工具；
+- 工具调用是否成功；
+- 工具输出是否被答案正确使用；
+- C4 相比 C3 的收益是否来自工具，而不是普通检索。
 
-Stage3 最新保留规则：
+### 7.3 Benchmark 与开源系统横向参考尚未开始
 
-- 只对 `multi_doc`、`fuzzy_query`、`insufficient_evidence` 等题型考虑扩展。
-- 不对 `simple_qa`、`calculation`、`code_execution`、`table_analysis` 题型扩展。
-- 只扩展排名靠前、同文档、同小节内的相邻 chunk。
-- 使用上下文预算限制。
-- 日志区分 `retrieved_chunk_ids`、`expanded_chunk_ids`、`final_citation_chunk_ids`。
-- 舍弃 keyword filter 版本。
+公共 Benchmark 子集和 Dify / RAGFlow 横向参考还没做。  
+这不是当前阻塞项，但最终报告中要明确：
 
-C2 最终口径：
+- 自建测试集是主实验；
+- Benchmark 子集是权威样例参考；
+- Dify / RAGFlow 是横向系统参考；
+- 不能把尚未完成的横向对比写成已有结果。
+
+## 8. 下一步分工
+
+### 赵启行
+
+- 统筹 C3-lite-next 结论口径；
+- 检查报告中 C2 Stage3、C3、Citation Accuracy 的表述是否严谨；
+- 组织 C4 工具型题 smoke 与正式实验；
+- 准备最终汇报中的技术路线图和模块消融表。
+
+### 唐宁
+
+- 人工复核 C3-lite-next 重点题：
+  `Q005, Q006, Q012, Q015, Q023, Q027`；
+- 标注 Answer Correctness、Citation Accuracy、Faithfulness、main problem；
+- 对 AI Judge 与人工判断冲突的题写说明；
+- 补齐 C4 工具题的 gold answer / expected tool。
+
+### 李金航
+
+- 解释 C3-lite 技术模块：
+  查询预算、RRF、Evidence Grader、claim-level self-check；
+- 协助定位 C3 失败题是检索问题、证据筛选问题还是答案生成问题；
+- 推进 C4 工具调用链路稳定性；
+- 准备 C4 工具调用日志字段和验收标准。
+
+## 9. 当前可写入汇报的阶段性结论
+
+可以写：
 
 ```text
-Hybrid retrieval + rerank 是当前最稳定的 C2 增强方案；context expansion 有探索价值，但在当前测试集上收益不稳定，适合写入边界分析和失败案例。
+本课题已完成 C0/C1/C2 基线与 C3-lite 低成本优化版的阶段性实验。
+C2 Stage2 是当前最稳定的检索增强主基线；C2 Stage3 上下文扩展收益不稳定，
+因此仅作为边界对照。C3-lite-next 在 30 题上以显著低于旧版 C3 的延迟和
+RAG 调用次数，保持接近旧版 C3 的综合质量，并在复杂多文档、模糊查询和
+证据不足任务上表现出更高价值。但当前 Citation Accuracy 因引用收缩略有下降，
+后续需要在不回到宽引用的前提下继续优化 citation selection。
 ```
 
-## 7. C3 当前状态与下一步
-
-C3 定位：Agentic Retrieval RAG，即在 C2 基础上加入任务规划、查询拆解、多轮 RAG 检索、多 pipeline 选择和初步证据检查。
-
-已完成（2026-05-25，记录人李金航）：
-
-- **自适应路由（2026-05-25）**：批量默认按 `expected_path` / `task_type` 选 **C2 轻路径**（单次全库 RAG）或 **C3/C4 编排**；`--no-adaptive-route` 可恢复全量 C3。
-- **主测试集正式 batch**：`run_c34_batch_eval.py --tier c3 --split main_20` → **20/20 ok**，约 42 分钟（路由开启前；复跑将多数题走 C2 轻路径）。
-- **正式产物**：`runs/results/c3_main_20_results.csv`、`runs/logs/c3_agentic_retrieval_batch/FORMAL_main_20_2026-05-25.md`。
-- **LLM 多维 Judge**：`runs/results/c3_main_20_llm_judged.csv`；weighted 均值 **0.850**，≥0.875 为 **16/20**。
-- 子 Agent 闭包 / ToolMessage / GBK / 配额重置等工程修复后，main_20 由修复前 14/20 提升至 20/20。
-- smoke（Q021–Q030）历史结论仍有效；与 main_20 为不同 split。
-
-薄弱题（Judge）：Q007（wrong_answer）、Q016（over_refusal）、Q013/Q017（incomplete_answer）。
-
-实验记录见：`docs/experiment_notes.md` →「2026-05-25 C3 主测试集 main_20 正式评测」。
-
-C3 下一步：
-
-1. 唐宁对 Q001–Q020 填/更新 `data/testset/manual_eval_c3_formal.csv`（与 LLM judge 对照）。
-2. **Q016**：`rag_eval_results.csv` 入库或改走 C4 表格工具后复测。
-3. 可选复跑 smoke 或做 C2 同题对照（证明 C3 相对 C2 的收益）。
-4. 根据人工评分决定是否优化：
-
-| 问题 | 优化方向 |
-| --- | --- |
-| 子查询过多、延迟过高 | 限制 planner 最多 2-3 个子查询 |
-| 多 pipeline 没有带来增益 | 默认优先使用 C2 Stage2 rerank，减少 Stage3 |
-| 引用不准 | 增加证据合并、去重和最终引用过滤 |
-| 过度拒答 | 调整 self-check，只检查证据是否足够支撑核心结论 |
-
-C3 目前验收标准建议：程序错误为 0；gold doc 覆盖不低于 90%；gold chunk 覆盖尽量提升到 70%；平均延迟尽量压到 90 秒以内；必须有人评 Answer Correctness 和 Citation Accuracy。
-
-## 8. C4 当前状态与下一步
-
-C4 定位：Tool-Augmented Agentic RAG，即在 C3 上加入外部工具调用，重点验证工具是否提升工具型任务完成率。
-
-已完成：
-
-| 工具 | 实现 |
-| --- | --- |
-| 文件读取 | `topic4_file_read` |
-| 文件写入/编辑 | `topic4_file_write`、`topic4_file_edit`，主要用于 Demo 和工程内操作 |
-| 文件入库 | `topic4_file_ingest` |
-| 计算器 | `topic4_calculator` |
-| 表格分析 | `topic4_table_analyzer` |
-| 代码执行 | `topic4_code_runner`，本地子进程沙箱 |
-| 受限 shell | `topic4_shell_exec`，主要用于 Demo 和工程内命令 |
-| 网页抓取 | Firecrawl，可选，需要 API Key |
-
-C4 下一步必须先跑工具题 batch：
-
-```powershell
-uv sync --group agent
-uv run python main.py kb sync
-$env:PYTHONUTF8="1"
-uv run python run_c34_batch_eval.py --tier c4 --split c4_tools --sandbox --verbose-events
-```
-
-检查输出：
+不能写：
 
 ```text
-runs/logs/c4_tool_augmented_batch/run_logs.jsonl
-runs/logs/c4_tool_augmented_batch/batch_report.json
+C3 全面优于 C2。
+C2 Stage3 是稳定提升方案。
+Dify / RAGFlow 已经完成横向对比。
+AI Judge 可以替代人工评分。
+Citation Accuracy 下降说明 C3 优化失败。
 ```
 
-C4 人工评分字段建议：
+## 10. 提交规范提醒
 
-```csv
-question_id,required_tool,selected_tools,tool_selection_accuracy,tool_call_success,tool_result_used,task_completion,answer_correctness,citation_accuracy,main_problem,comment,reviewer,status
-```
-
-C4 当前工具题只有 Q013、Q016-Q019，数量偏少。建议扩到 12-15 题：
-
-| 类型 | 数量建议 |
-| --- | ---: |
-| 文件读取 | 3 |
-| 计算器 | 3 |
-| 表格分析 | 3 |
-| 代码执行 | 3 |
-| 可选网页或 shell Demo | 1-3 |
-
-注意：文件写入、shell、Firecrawl 可以作为现场 Demo 能力，不建议先放入主评测，避免安全、网络和复现问题影响主线结论。
-
-## 9. docs 文档整理口径
-
-`docs/` 文档按以下职责维护：
-
-| 类别 | 主文档 | 说明 |
-| --- | --- | --- |
-| 文档导航 | `docs/README.md` | docs 目录入口，说明哪些文档还在维护 |
-| 协作规范 | `environment_and_git_rules.md`、`collaboration_workflow.md`、`directory_rules.md` | 环境、Git、分工和目录规则 |
-| 架构说明 | `ARCHITECTURE.md`、`agent_runtime_architecture.md`、`c0_baseline_architecture.md` | 总架构、Runtime、C0 历史基线 |
-| 实验指南 | `batch_experiment_guide.md`、`c2_ablation_guide.md`、`c3_smoke_experiment_guide.md` | C0/C1、C2、C3 的可复现运行说明 |
-| 评测规范 | `evaluation_plan.md`、`evaluation_ai_judge.md` | 人工评分和 AI Judge 辅助评分 |
-| 实验记录 | `experiment_notes.md` | 按时间记录每次实验，不替代正式结论 |
-| 专题报告 | `c2_three_layer_retrieval_report.md`、`manual_eval_c0_c1_summary.md`、`failure_cases.md` | 阶段性总结和失败案例 |
-
-已合并或不再单独维护：
-
-- `team_roles.md` 已合并到 `collaboration_workflow.md`。
-- 根目录 `README.md` 的运行进度内容移入 `current progress.md`。
-- 后续不再把同一类运行命令同时写进 README、docs/README 和多个指南，优先维护 `current progress.md` 与对应实验指南。
-
-## 10. 成员当前任务
-
-| 成员 | 当前重点 |
-| --- | --- |
-| 赵启行 | 收口 C2 结论；组织 C3/C4 batch；控制实验变量；汇总报告口径 |
-| 唐宁 | 补 C2 Stage3 selective 人工评分；补 C3/C4 人工评分；扩充测试集与 references |
-| 李金航 | main_20 正式 batch 已完成（见 experiment_notes 2026-05-25）；下一步 C4 tools / Q016 入库 |
-
-## 11. 下一步执行顺序
-
-优先级从高到低：
-
-1. 唐宁完成 C3 main_20 人工评分（`manual_eval_c3_formal.csv` Q001–Q020）。
-2. 复跑 C4 tools batch（或 main_20），生成工具调用日志。
-3. 处理 Q016：`rag_eval_results.csv` 入库或 C4 表格工具复测。
-4. 赵启行汇总 C0-C4 对比表和 C2 最终口径。
-5. 扩充测试集到 40-50 题。
-6. 整理至少 10 个失败案例。
-7. 补 C4 消融：`no-tool`、`no-self-check`、`no-rewrite`。
-8. 最后再做 Benchmark 子集和 Dify/RAGFlow 横向参考。
-
-## 12. 当前主要风险
-
-1. **C3 main_20 已有正式 batch + LLM judge，人评未闭环。** C4 工具题 batch 仍待跑。
-2. **C3 延迟偏高。** 如果平均 150 秒级别，需要解释何种任务才值得走 C3。
-3. **C4 工具题数量太少。** 5 道题不足以支撑工具有效性结论。
-4. **Stage3 不能过度包装。** 选择性扩展只是可控性改善，不是 C2 主增益。
-5. **`runs/` 不进 Git。** 组员拉仓库拿不到本地结果，需要自己复现或单独打包。
-6. **Benchmark / Dify / RAGFlow 暂缓。** 当前主线还没闭环，过早做横向参考会分散精力。
-## 2026-05-27 当前进度更新：C2 Stage3 回退与 C3-lite-next 30 题完成
-
-### 当前阶段判断
-
-项目当前处于：
+不要提交：
 
 ```text
-C3 低成本优化版 30 题完成 + C2 Stage3 边界分析 + C4 正式实验准备阶段
+.env
+.venv/
+runs/
+archive/
+debug-*.log
+__pycache__/
 ```
 
-本轮完成了 C2/C3 主线的重要收口：
+实验结果如需共享，应单独打包或在文档中摘要说明，不直接把 `runs/` 全量提交到 Git。
 
-- C2 主结论继续以 `C2 Stage2 Hybrid + Rerank` 为稳定基线。
-- C2 Stage3 old 作为上下文扩展边界对照。
-- C2 Stage3 next 在 30 题上退化，已本地备份并从代码口径回退，不再作为正式增强方案。
-- C3-lite-next 完成 30 题实验，当前可作为 C3 主方案进入人工复核和报告整理阶段。
-- C3 优化方案与技术报告见 `docs/c3_lite_optimization_technical_report.md`；`docs/c3_lite_next_30_experiment_report.md` 仅作为结果记录。
-
-### C2 Stage3 状态
-
-当前 C2 Stage3 采用旧版代码口径：
-
-```text
-C2 Stage2 + context_neighbor_chunks=1
-```
-
-不再给 `c2_stage3_context` 额外启用 Evidence Grader，也不采用当前 next 版较小上下文预算。当前 next 版实验结果已经备份到本地：
-
-```text
-archive/experiment_runs/c2_stage3_next_before_rollback_2026-05-27/
-```
-
-后续报告中应明确：
-
-- C2 Stage2 是 C2 主基线；
-- C2 Stage3 是探索性上下文扩展对照；
-- Stage3 next 是失败优化尝试，用于边界分析，不写成正式提升。
-
-### C3-lite-next 状态
-
-C3-lite-next 30 题结果：
-
-| 配置 | 成功题数 | 平均延迟 | 平均 RAG 次数 | Answer Correctness | Citation Accuracy | Faithfulness | 综合分 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| C3 formal old | 30/30 | 156.7s | 10.87 | 0.767 | 0.750 | 0.950 | 0.808 |
-| C3 conservative old | 30/30 | 98.3s | 5.37 | 0.733 | 0.767 | 0.917 | 0.792 |
-| C3-lite-next | 30/30 | 41.6s | 1.60 | 0.750 | 0.717 | 0.967 | 0.796 |
-
-阶段性结论：
-
-- C3-lite-next 显著降低了延迟和 RAG 调用次数。
-- 综合分基本保持旧版 C3 水平。
-- 主要收益集中在 `multi_doc`、`fuzzy_query`、`insufficient_evidence` 任务。
-- 对 `simple_qa`、`calculation`、`code_execution`，C2 往往已经足够，C3 不应作为所有任务默认路径。
-
-### 下一步任务
-
-赵启行：
-
-- 统筹 C3-lite-next 报告口径；
-- 检查 C2 Stage3 回退后的代码和测试；
-- 推进 C4 工具型任务正式实验。
-
-唐宁：
-
-- 人工复核 `Q005、Q006、Q012、Q015、Q023、Q027`；
-- 重点标注 Answer Correctness、Citation Accuracy、main problem；
-- 对 AI Judge 与人工评分冲突的题做说明。
-
-李金航：
-
-- 解释 C3-lite-next 中 RAG 调用预算、RRF、Evidence Grader、claim-level self-check 的技术作用；
-- 协助判断 C3 失败题是检索问题、证据筛选问题还是答案生成问题；
-- 准备 C4 工具调用链路的 smoke 与正式实验。
