@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -125,7 +126,43 @@ def _row_evidence(row: dict[str, str], chunks_by_id: dict[str, dict[str, Any]]) 
         value = row.get(key)
         if value:
             parts.append(f"{key}: {_compact(value, limit=5000)}")
+    tool_calls_raw = row.get("actual_tool_calls", "")
+    if tool_calls_raw:
+        try:
+            tool_calls = json.loads(tool_calls_raw)
+        except json.JSONDecodeError:
+            tool_calls = []
+        tool_parts: list[str] = []
+        if isinstance(tool_calls, list):
+            for item in tool_calls:
+                if not isinstance(item, dict):
+                    continue
+                tool_id = str(item.get("id") or "").strip()
+                name = str(item.get("name") or "").strip()
+                ok = item.get("output_ok", item.get("ok", ""))
+                error = str(item.get("output_error") or "").strip()
+                preview = _compact(item.get("output_preview", ""), limit=1200)
+                tool_parts.append(
+                    f"[{tool_id}] name={name} ok={ok} error={error}\n{preview}"
+                )
+        if tool_parts:
+            parts.append("tool_outputs:\n" + "\n\n".join(tool_parts))
     return "\n\n".join(parts)
+
+
+def _generated_citations_for_judge(row: dict[str, str]) -> str:
+    parts: list[str] = []
+    raw_citations = (row.get("citations") or "").strip()
+    if raw_citations:
+        parts.append(raw_citations)
+    tool_citations = (row.get("tool_output_citation_ids") or "").strip()
+    if tool_citations:
+        parts.append(f"tool_output_citation_ids: {tool_citations}")
+    answer = row.get("answer") or ""
+    answer_tool_ids = sorted(set(re.findall(r"\[tool:[^\]\s]+\]", answer)))
+    if answer_tool_ids:
+        parts.append("tool_ids_in_answer: " + json.dumps(answer_tool_ids, ensure_ascii=False))
+    return "\n".join(parts)
 
 
 def build_multidim_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
@@ -202,7 +239,7 @@ def run_multidim_from_args(args: argparse.Namespace) -> None:
                 generated_answer=row.get("answer", ""),
                 judge_rule=ref.get("judge_rule", ""),
                 retrieved_evidence=_row_evidence(row, chunks_by_id),
-                generated_citations=_compact(row.get("citations", ""), limit=3000),
+                generated_citations=_compact(_generated_citations_for_judge(row), limit=3000),
                 gold_doc_id=ref.get("evidence_doc_id", ""),
                 gold_chunk_id=ref.get("evidence_chunk_id", ""),
                 prompt_file=args.prompt,

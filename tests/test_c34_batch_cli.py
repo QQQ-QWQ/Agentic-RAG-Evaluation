@@ -26,6 +26,15 @@ def test_c34_parser_accepts_conservative_and_c2_baseline_options():
             "Q007,Q008",
             "--no-adaptive-route",
             "--c3-conservative-opt",
+            "--c3-final-opt",
+            "--c3-ablate-required-items",
+            "--c3-ablate-evidence-grader",
+            "--c3-ablate-rrf",
+            "--c3-ablate-claim-check",
+            "--disable-tools",
+            "file_reader,calculator",
+            "--c4-ablate-tool-citation",
+            "--c4-ablate-tool-priority-prompt",
             "--force-rag-preset",
             "c2_stage3_context",
             "--result-csv",
@@ -33,5 +42,13 @@ def test_c34_parser_accepts_conservative_and_c2_baseline_options():
         ]
     )
     assert args.c3_conservative_opt is True
+    assert args.c3_final_opt is True
+    assert args.c3_ablate_required_items is True
+    assert args.c3_ablate_evidence_grader is True
+    assert args.c3_ablate_rrf is True
+    assert args.c3_ablate_claim_check is True
+    assert args.disable_tools == "file_reader,calculator"
+    assert args.c4_ablate_tool_citation is True
+    assert args.c4_ablate_tool_priority_prompt is True
     assert args.force_rag_preset == "c2_stage3_context"
     assert str(args.result_csv).endswith("test.csv")

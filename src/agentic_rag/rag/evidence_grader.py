@@ -205,7 +205,8 @@ def filter_hits_by_grades(
         ):
             kept.append(hit)
         elif (
-            (task_type or "").strip() == "multi_doc"
+            (task_type or "").strip().lower()
+            in {"multi_doc", "comparison", "classification", "table_analysis"}
             and grade.support_type == "background"
             and grade.keep
             and background_count < max_background

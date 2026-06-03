@@ -3,6 +3,7 @@
 from agentic_rag.deep_planning.session_planner import (
     compose_layer2_user_message,
     looks_like_document_path,
+    resolve_document_path,
 )
 from agentic_rag.deep_planning.session_planner import SessionPlan
 from agentic_rag.orchestration.planning_extensions import kb_execution_notes_for_layer2
@@ -18,6 +19,38 @@ def test_rejects_retrieval_scope_ui_text_as_path():
 
 def test_accepts_windows_path():
     assert looks_like_document_path(r"E:\Agentic-RAG-Evaluation-1\data\raw\a.md") is True
+
+
+def test_csv_path_is_not_bound_as_single_rag_document(tmp_path, monkeypatch):
+    csv_file = tmp_path / "metrics.csv"
+    csv_file.write_text("metric,value\naccuracy,0.8\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    plan = SessionPlan(
+        document_path="metrics.csv",
+        task_summary="read csv",
+        needs_retrieval_tools=True,
+        suggested_pipelines=[],
+        plan_for_layer2="use table analyzer",
+        reasoning_brief="test",
+        raw={},
+    )
+    assert resolve_document_path(plan) is None
+
+
+def test_py_path_is_not_bound_as_single_rag_document(tmp_path, monkeypatch):
+    py_file = tmp_path / "example.py"
+    py_file.write_text("print('hello')\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    plan = SessionPlan(
+        document_path="example.py",
+        task_summary="read code",
+        needs_retrieval_tools=False,
+        suggested_pipelines=[],
+        plan_for_layer2="use file_read or code_runner",
+        reasoning_brief="test",
+        raw={},
+    )
+    assert resolve_document_path(plan) is None
 
 
 def test_kb_notes_skip_fake_path(tmp_path):

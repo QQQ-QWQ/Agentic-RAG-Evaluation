@@ -37,7 +37,15 @@ RAG_SUBAGENT_SPECS: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
+C3_FINAL_SUBAGENT_SPEC: tuple[str, str, str] = (
+    "rag_subagent_c3_final",
+    "c3_final",
+    "銆怌3-final 妫€绱㈠瓙浠ｇ悊銆慍3-lite + coverage-oriented Evidence Grader. "
+    "Use only in C3-final optimization when a comparison/classification task has missing required items.",
+)
+
 SUBAGENT_TOOL_NAMES = frozenset(name for name, _, _ in RAG_SUBAGENT_SPECS)
+C3_FINAL_SUBAGENT_TOOL_NAME = C3_FINAL_SUBAGENT_SPEC[0]
 
 
 def build_rag_subagent_tools(
@@ -47,11 +55,18 @@ def build_rag_subagent_tools(
     kb_doc_ids: list[str] | None = None,
     compact_max_chars: int = 12_000,
     evidence_max_chars: int = 6000,
+    include_c3_final: bool = False,
+    c3_final_pipeline_id: str = "c3_final",
 ) -> list[Any]:
     """为第二层 Lead Agent 注册固定管线的检索子 Agent（LangChain Tool）。"""
     tools: list[Any] = []
 
-    for tool_name, pipeline_id, description in RAG_SUBAGENT_SPECS:
+    specs = list(RAG_SUBAGENT_SPECS)
+    if include_c3_final:
+        name, _pipeline, description = C3_FINAL_SUBAGENT_SPEC
+        specs.append((name, c3_final_pipeline_id or "c3_final", description))
+
+    for tool_name, pipeline_id, description in specs:
 
         def _make_fn(
             _name: str = tool_name,

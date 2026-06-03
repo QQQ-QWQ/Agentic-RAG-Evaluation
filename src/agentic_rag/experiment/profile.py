@@ -50,6 +50,8 @@ class RunProfile:
     use_evidence_grader: bool = False
     evidence_grader_backend: str = "llm"
     evidence_grader_max_chunks: int = 8
+    evidence_grader_min_partial_relevance: float = 0.55
+    evidence_grader_min_keep: int = 2
 
     dense_weight: float = 0.6
     bm25_weight: float = 0.4
@@ -133,6 +135,12 @@ def merge_profile_dict(base: RunProfile, data: Mapping[str, Any]) -> None:
         base.evidence_grader_backend = str(data["evidence_grader_backend"]).strip().lower()
     if "evidence_grader_max_chunks" in data:
         base.evidence_grader_max_chunks = int(data["evidence_grader_max_chunks"])
+    if "evidence_grader_min_partial_relevance" in data:
+        base.evidence_grader_min_partial_relevance = float(
+            data["evidence_grader_min_partial_relevance"]
+        )
+    if "evidence_grader_min_keep" in data:
+        base.evidence_grader_min_keep = int(data["evidence_grader_min_keep"])
     if "question_id" in data:
         base.question_id = str(data["question_id"])
     if "rewrite_prompt_file" in data and data["rewrite_prompt_file"]:
@@ -198,6 +206,12 @@ def profile_from_yaml_dict(data: Mapping[str, Any]) -> RunProfile:
             p.evidence_grader_backend = str(r["evidence_grader_backend"]).strip().lower()
         if "evidence_grader_max_chunks" in r:
             p.evidence_grader_max_chunks = int(r["evidence_grader_max_chunks"])
+        if "evidence_grader_min_partial_relevance" in r:
+            p.evidence_grader_min_partial_relevance = float(
+                r["evidence_grader_min_partial_relevance"]
+            )
+        if "evidence_grader_min_keep" in r:
+            p.evidence_grader_min_keep = int(r["evidence_grader_min_keep"])
     if "query_rewrite" in data and isinstance(data["query_rewrite"], dict):
         qr = data["query_rewrite"]
         if "prompt_file" in qr and qr["prompt_file"]:

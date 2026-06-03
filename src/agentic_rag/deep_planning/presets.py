@@ -25,6 +25,9 @@ RAG_PIPELINE_LABELS: dict[str, str] = {
     "c2_stage2_rerank": "C2 阶段2：阶段1 + LLM rerank",
     "c2_stage3_context": "C2 阶段3：阶段2 + 邻接 chunk 上下文扩展",
     "c3_lite_v2": "C3-lite-v2：multi-query RRF + rerank + Evidence Grader",
+    "c3_final": "C3-final：multi-query RRF + rerank + coverage-oriented Evidence Grader",
+    "c3_final_no_evidence_grader": "C3-final ablation：RRF + rerank，关闭 Evidence Grader",
+    "c3_final_no_rrf": "C3-final ablation：score fusion + rerank + Evidence Grader",
 }
 
 
@@ -81,6 +84,27 @@ def _base_c3_lite_v2() -> RunProfile:
     return p
 
 
+def _base_c3_final() -> RunProfile:
+    p = _base_c3_lite_v2()
+    p.max_retrieval_queries = 4
+    p.evidence_grader_max_chunks = 10
+    p.evidence_grader_min_partial_relevance = 0.35
+    p.evidence_grader_min_keep = 3
+    return p
+
+
+def _base_c3_final_no_evidence_grader() -> RunProfile:
+    p = _base_c3_final()
+    p.use_evidence_grader = False
+    return p
+
+
+def _base_c3_final_no_rrf() -> RunProfile:
+    p = _base_c3_final()
+    p.multi_query_fusion = "score"
+    return p
+
+
 def _base_project_default() -> RunProfile:
     """显式拷贝默认策略（与 dataclass 默认值一致）。"""
     return RunProfile()
@@ -94,6 +118,9 @@ _PRESET_BUILDERS: dict[str, RunProfile] = {
     "c2_stage2_rerank": _base_c2_s2(),
     "c2_stage3_context": _base_c2_s3(),
     "c3_lite_v2": _base_c3_lite_v2(),
+    "c3_final": _base_c3_final(),
+    "c3_final_no_evidence_grader": _base_c3_final_no_evidence_grader(),
+    "c3_final_no_rrf": _base_c3_final_no_rrf(),
 }
 
 

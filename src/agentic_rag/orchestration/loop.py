@@ -61,10 +61,7 @@ def _maybe_override_continue_execute(
             ).strip(),
             raw={**(verdict.raw or {}), "override": "session_rag_quota"},
         )
-    if (
-        cfg.enable_c3_conservative_optimization
-        and verdict.support_verdict == "partially_supported"
-    ):
+    if _claim_level_enabled(cfg) and verdict.support_verdict == "partially_supported":
         return JudgeVerdict(
             verdict="complete",
             summary_for_user=verdict.summary_for_user
@@ -103,6 +100,21 @@ def _maybe_override_continue_execute(
                 raw={**(verdict.raw or {}), "override": "grounded_prefer_complete"},
             )
     return verdict
+
+
+def _claim_level_enabled(cfg: OrchestrationConfig) -> bool:
+    return (
+        (cfg.enable_c3_conservative_optimization or cfg.enable_c3_final_optimization)
+        and not cfg.c3_ablate_claim_check
+    )
+
+
+def _c3_final_pipeline_id(cfg: OrchestrationConfig) -> str:
+    if cfg.c3_ablate_evidence_grader:
+        return "c3_final_no_evidence_grader"
+    if cfg.c3_ablate_rrf:
+        return "c3_final_no_rrf"
+    return "c3_final"
 
 
 def _plan_digest(plan: SessionPlan) -> str:
@@ -342,7 +354,7 @@ def _orchestrate_until_stable(
 
     reset_rag_session_quota(
         max_total_calls=cfg.max_total_rag_calls,
-        block_duplicate_queries=cfg.enable_c3_conservative_optimization,
+        block_duplicate_queries=_claim_level_enabled(cfg),
     )
 
     orch_round = 0
@@ -350,7 +362,7 @@ def _orchestrate_until_stable(
         orch_round += 1
         reset_rag_tool_quota(
             max_calls=cfg.max_rag_tool_calls_per_round,
-            block_duplicate_queries=cfg.enable_c3_conservative_optimization,
+            block_duplicate_queries=_claim_level_enabled(cfg),
         )
         _fire("on_round_start", orch_round)
 
@@ -475,6 +487,9 @@ def _orchestrate_until_stable(
                 sandbox_workspace=sandbox_ws,
                 enable_c4_tools=cfg.enable_c4_tools,
                 use_rag_subagent_tools=cfg.use_rag_subagent_tools,
+                enable_c3_final_tools=cfg.enable_c3_final_optimization,
+                c3_final_pipeline_id=_c3_final_pipeline_id(cfg),
+                disabled_tools=cfg.c4_disabled_tools,
                 additional_tools=extra_agent_tools if extra_agent_tools else None,
             )
 
@@ -496,13 +511,18 @@ def _orchestrate_until_stable(
             kb_execution_notes=kb_notes,
             enable_c4_tools=cfg.enable_c4_tools,
             enable_c3_conservative_optimization=cfg.enable_c3_conservative_optimization,
+            enable_c3_final_optimization=cfg.enable_c3_final_optimization,
+            c3_task_type=cfg.c3_task_type,
+            c3_required_items=cfg.c3_required_items,
+            c4_ablate_tool_citation=cfg.c4_ablate_tool_citation,
+            c4_ablate_tool_priority_prompt=cfg.c4_ablate_tool_priority_prompt,
         )
 
         verdict: JudgeVerdict | None = None
         for attempt_idx in range(cfg.max_execute_retries_per_round):
             reset_rag_tool_quota(
                 max_calls=cfg.max_rag_tool_calls_per_round,
-                block_duplicate_queries=cfg.enable_c3_conservative_optimization,
+                block_duplicate_queries=_claim_level_enabled(cfg),
             )
             if attempt_idx > 0:
                 print(
@@ -567,7 +587,7 @@ def _orchestrate_until_stable(
                     question=user_original,
                     generated_answer=ans_txt,
                     evidence_excerpt=ev,
-                    claim_level=cfg.enable_c3_conservative_optimization,
+                    claim_level=_claim_level_enabled(cfg),
                 )
                 print("\n--- 知识库对齐核验 ---\n")
                 print(
@@ -591,7 +611,7 @@ def _orchestrate_until_stable(
                 orchestration_round=orch_round,
                 temperature=cfg.judge_temperature,
                 kb_grounding=kb_digest,
-                claim_level=cfg.enable_c3_conservative_optimization,
+                claim_level=_claim_level_enabled(cfg),
             )
             verdict = _maybe_override_continue_execute(
                 verdict,
@@ -620,6 +640,11 @@ def _orchestrate_until_stable(
                     kb_execution_notes=kb_notes,
                     enable_c4_tools=cfg.enable_c4_tools,
                     enable_c3_conservative_optimization=cfg.enable_c3_conservative_optimization,
+                    enable_c3_final_optimization=cfg.enable_c3_final_optimization,
+                    c3_task_type=cfg.c3_task_type,
+                    c3_required_items=cfg.c3_required_items,
+                    c4_ablate_tool_citation=cfg.c4_ablate_tool_citation,
+                    c4_ablate_tool_priority_prompt=cfg.c4_ablate_tool_priority_prompt,
                 )
                 continue
             break

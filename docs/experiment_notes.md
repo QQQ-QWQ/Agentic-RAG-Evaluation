@@ -2203,3 +2203,111 @@ Q005, Q006, Q012, Q015, Q023, Q027
 - 是否混淆分类体系；
 - 是否出现过度保守或证据不足仍下结论；
 - C3 的额外延迟是否换来了真实答案质量收益。
+
+## 2026-06-02：C4 工具调用优化、回退与当前正式口径
+
+记录人：赵启行
+
+阶段：C4 Tool-Augmented Agentic RAG 初步正式实验与优化收口。
+
+### 1. 本轮目标
+
+本轮目标是对新增 C4 候选题 `Q031-Q048` 做工具调用优化与重跑实验，重点验证：
+
+- 工具是否真实调用；
+- 工具选择是否符合题目要求；
+- 工具调用是否成功；
+- 工具输出是否被最终答案使用；
+- 缺文件、代码执行、表格分析等工具型任务是否能保守、可复核地回答。
+
+### 2. 已完成操作
+
+1. 已备份初版 C4 formal baseline：`archive/experiment_runs/c4_candidates_formal_before_opt_2026-06-02/`。
+2. 增加 C4 结构化工具调用日志字段：`actual_tool_calls`、`actual_tool_names`、`expected_tool_names`、`tool_call_count`、`tool_success_count`、`tool_call_success_rate`、`tool_selection_match`、`tool_output_citation_ids`、`tool_output_used`。
+3. 优化 C4 工具选择提示：CSV/TSV 优先 `topic4_table_analyzer`，数值计算在提取数据后使用 `topic4_calculator`，Python 片段或脚本优先 `topic4_code_runner`，普通本地文件优先 `topic4_file_read`，缺文件时必须明确说明、不能编造。
+4. 修复 `.csv`、`.py` 等非单文档 RAG 解析链支持格式被错误绑定为单文档 RAG 的问题，避免 `UnsupportedFormatError` 把整题判为程序失败。
+5. 更新 AI Judge：将工具输出摘要加入 `retrieved_evidence`，将 `[tool:topic4_xxx#n]` 作为 C4 工具型任务中的有效 citation，避免 C4 工具证据被传统 chunk citation 口径低估。
+
+### 3. 当前采用版本
+
+当前正式采用版本为“上次优化版”，对应结果由以下日志重建：
+
+```text
+runs/logs/c4_candidates_optimized_v4/
+```
+
+本轮后续继续尝试过更强的 Q039 / Q048 专项 prompt 约束，但平均延迟和结果稳定性变差，因此已回退。该尝试仅作为边界探索记录保留：
+
+```text
+archive/experiment_runs/c4_latest_attempt_before_rollback_2026-06-02/
+```
+
+### 4. 当前结果摘要
+
+当前结果文件：
+
+```text
+runs/results/c4_candidates_optimized_results.csv
+runs/results/c4_candidates_optimized_llm_judged.csv
+runs/results/c4_candidates_optimized_summary.md
+runs/results/c4_candidates_baseline_vs_optimized.csv
+runs/results/c4_candidates_baseline_vs_optimized.md
+```
+
+核心指标如下：
+
+| 指标 | 初版 C4 baseline | 当前优化版 |
+| --- | ---: | ---: |
+| 程序级成功 | 18/18 | 18/18 |
+| 平均延迟 | 16.36s | 18.30s |
+| Answer Correctness | 0.778 | 0.833 |
+| Citation Accuracy | 0.028 | 0.917 |
+| Faithfulness | 0.306 | 0.972 |
+| 综合分 | 0.479 | 0.903 |
+
+工具链指标：
+
+```text
+Tool Selection Match: 16/18
+Tool Output Used: 17/18
+Average Tool Call Success Rate: 0.851
+```
+
+### 5. 阶段性结论
+
+当前 C4 优化相对初版有明显提升，主要提升不只是答案内容，而是“工具调用可评测性”和“工具证据可信度”：
+
+- 初版 C4 能运行，但缺少结构化工具调用记录，难以判断到底调用了哪些工具。
+- 当前优化版可以记录真实工具链、工具成功率、工具选择匹配和工具输出引用。
+- AI Judge 在补充工具证据输入后，可以更合理地评价 C4 工具型任务。
+- C4 对文件读取、表格分析、计算、代码执行、缺文件保守回答等任务已具备初步正式测试能力。
+
+### 6. 当前问题与边界
+
+1. Q039 仍是边界案例：代码分析题中，模型容易把“解析/写文件”误判为“数据获取方式”。继续堆 prompt 不稳定，后续更适合加入规则化代码扫描或 AST/正则分析。
+2. Q044 是缺文件题，工具返回失败是预期行为，不能简单按普通 Tool Success 失败理解。
+3. Q048 在某些运行中会因依赖 table preview 漏掉完整排序结果，后续应要求 code_runner 挂载并完整读取 CSV。
+4. C4 平均延迟略高于 baseline，但仍明显低于此前过强 prompt 尝试版本，因此当前版本是更合理的成本-效果平衡点。
+
+### 7. 验证状态
+
+已运行：
+
+```powershell
+uv run pytest tests/test_layer_handoff.py tests/test_c4_computation_tools.py tests/test_c34_batch_cli.py tests/test_runtime_tools.py tests/test_file_ops_tools.py tests/test_session_trace_audit.py tests/test_c4_tool_trace_summary.py -q
+uv run ruff check .
+```
+
+结果：
+
+```text
+27 passed
+ruff: All checks passed
+```
+
+### 8. 下一步
+
+1. 唐宁需要人工复核 C4 关键题，尤其是 `Q039`、`Q044`、`Q048`。
+2. 李金航需要确认工具日志字段是否足够支撑最终报告中的 Tool Selection Accuracy、Tool Call Success、Tool Output Used。
+3. 赵启行需要在报告中明确：C4 当前结论是“初步正式结果”，不是最终冻结结果。
+4. 如果继续优化 C4，不建议再堆 prompt；优先做确定性工具增强：代码分析类任务增加 AST/正则扫描，CSV 排序类任务强制 code_runner 挂载并完整读取 CSV，缺文件题单独统计为 expected failure / conservative success。

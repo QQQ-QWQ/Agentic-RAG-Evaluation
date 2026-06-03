@@ -422,6 +422,9 @@ def build_topic4_rag_tools(
     sandbox_workspace: Path | None = None,
     enable_c4_tools: bool = True,
     use_rag_subagent_tools: bool = False,
+    enable_c3_final_tools: bool = False,
+    c3_final_pipeline_id: str = "c3_final",
+    disabled_tools: list[str] | set[str] | tuple[str, ...] | None = None,
 ) -> list[Any]:
     """
     - C3（``enable_c4_tools=False``）：仅 ``topic4_list_rag_pipelines`` + ``topic4_rag_query``（无 Firecrawl / 本地读盘）。
@@ -522,10 +525,59 @@ def build_topic4_rag_tools(
                 doc_path=doc_path,
                 use_knowledge_base=use_kb,
                 kb_doc_ids=kb_doc_ids,
+                include_c3_final=enable_c3_final_tools,
+                c3_final_pipeline_id=c3_final_pipeline_id,
             )
         )
 
     from agentic_rag.deep_planning.tool_quota import wrap_tools_with_rag_quota
     from agentic_rag.telemetry.tool_audit import wrap_tools_with_audit
 
+    disabled = _expand_disabled_tool_names(disabled_tools or [])
+    if disabled:
+        tools = [t for t in tools if str(getattr(t, "name", "")) not in disabled]
+
     return wrap_tools_with_audit(wrap_tools_with_rag_quota(tools))
+
+
+def _expand_disabled_tool_names(names: list[str] | set[str] | tuple[str, ...]) -> set[str]:
+    aliases: dict[str, set[str]] = {
+        "all": {
+            "topic4_file_read",
+            "topic4_file_write",
+            "topic4_file_edit",
+            "topic4_file_ingest",
+            "topic4_calculator",
+            "topic4_table_analyzer",
+            "topic4_code_runner",
+            "sandbox_exec_python",
+            "topic4_shell_exec",
+            "topic4_firecrawl_scrape",
+            "topic4_firecrawl_search",
+            "topic4_firecrawl_scrape_to_kb",
+        },
+        "file_reader": {"topic4_file_read"},
+        "file_read": {"topic4_file_read"},
+        "file_ops": {
+            "topic4_file_read",
+            "topic4_file_write",
+            "topic4_file_edit",
+            "topic4_file_ingest",
+        },
+        "calculator": {"topic4_calculator"},
+        "table_analyzer": {"topic4_table_analyzer"},
+        "code_runner": {"topic4_code_runner", "sandbox_exec_python"},
+        "shell_exec": {"topic4_shell_exec"},
+        "firecrawl": {
+            "topic4_firecrawl_scrape",
+            "topic4_firecrawl_search",
+            "topic4_firecrawl_scrape_to_kb",
+        },
+    }
+    out: set[str] = set()
+    for raw in names:
+        key = str(raw or "").strip()
+        if not key:
+            continue
+        out.update(aliases.get(key, {key}))
+    return out

@@ -1,4 +1,4 @@
-"""多层级编排共用数据结构（与评测 judge 无关）。"""
+﻿"""多层级编排共用数据结构（与评测 judge 无关）。"""
 
 from __future__ import annotations
 
@@ -48,6 +48,26 @@ class OrchestrationConfig:
     """第三层：证据已对齐且执行轮次已用尽一次时，倾向 complete 而非继续检索。"""
     enable_c3_conservative_optimization: bool = False
     """C3 内部保守优化：重复检索抑制、引用筛选提示与 claim-level self-check。"""
+    enable_c3_final_optimization: bool = False
+    """C3 final optimization: required-item coverage repair under a low-cost budget."""
+    c3_ablate_required_items: bool = False
+    """C3 ablation: disable required-item extraction and targeted coverage repair."""
+    c3_ablate_evidence_grader: bool = False
+    """C3 ablation: route C3-final sub-agent through a no-evidence-grader preset."""
+    c3_ablate_rrf: bool = False
+    """C3 ablation: route C3-final sub-agent through a no-RRF fusion preset."""
+    c3_ablate_claim_check: bool = False
+    """C3 ablation: disable claim-level judge/grounding prompts while keeping normal self-check."""
+    c4_disabled_tools: list[str] = field(default_factory=list)
+    """C4 ablation: concrete or logical tool names disabled for this run."""
+    c4_ablate_tool_citation: bool = False
+    """C4 ablation: ask the executor not to bind final claims to [tool:...] citations."""
+    c4_ablate_tool_priority_prompt: bool = False
+    """C4 ablation: weaken task-specific tool priority instructions."""
+    c3_task_type: str = ""
+    """Task type metadata used by C3 final prompts and logs."""
+    c3_required_items: list[str] = field(default_factory=list)
+    """Deterministically extracted required items for C3 final prompts and logs."""
 
 
 @dataclass

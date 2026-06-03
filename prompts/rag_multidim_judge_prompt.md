@@ -25,6 +25,10 @@ Dimensions:
 3. citation_accuracy
    - Score whether the generated citations point to documents/chunks that can
      support the key claims.
+   - For tool-augmented C4 tasks, citations such as [tool:topic4_table_analyzer#1],
+     [tool:topic4_calculator#1], [tool:topic4_file_read#1], and
+     [tool:topic4_code_runner#1] are valid citations if the matching tool output
+     appears in retrieved_evidence and directly supports the claim.
    - Use gold_doc_id and gold_chunk_id as reference anchors when available.
    - If citations are absent while citation_required is implied by the task,
      score 0.

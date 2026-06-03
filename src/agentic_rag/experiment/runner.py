@@ -53,6 +53,8 @@ def run_document_rag(
         "use_evidence_grader": p.use_evidence_grader,
         "evidence_grader_backend": p.evidence_grader_backend,
         "evidence_grader_max_chunks": p.evidence_grader_max_chunks,
+        "evidence_grader_min_partial_relevance": p.evidence_grader_min_partial_relevance,
+        "evidence_grader_min_keep": p.evidence_grader_min_keep,
     }
 
     if p.use_query_rewrite:
@@ -124,6 +126,8 @@ def run_knowledge_base_rag(
         "use_evidence_grader": p.use_evidence_grader,
         "evidence_grader_backend": p.evidence_grader_backend,
         "evidence_grader_max_chunks": p.evidence_grader_max_chunks,
+        "evidence_grader_min_partial_relevance": p.evidence_grader_min_partial_relevance,
+        "evidence_grader_min_keep": p.evidence_grader_min_keep,
     }
 
     doc_filter: frozenset[str] | None = None

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import ast
 import json
 import re
 import subprocess
@@ -29,6 +30,11 @@ from agentic_rag.orchestration.route_policy import (
     RouteDecision,
     apply_route_to_orchestration,
     resolve_route,
+)
+from agentic_rag.orchestration.required_items import (
+    c3_final_rag_budget,
+    extract_required_items,
+    item_support_map,
 )
 from agentic_rag.orchestration.types import OrchestrationConfig
 from agentic_rag.runtime.engine.query_engine import QueryEngine, QueryEngineConfig
@@ -81,6 +87,14 @@ class C34BatchReport:
     split: str = ""
     planning_rewrite_enabled: bool = False
     c3_conservative_opt_enabled: bool = False
+    c3_final_opt_enabled: bool = False
+    c3_ablate_required_items: bool = False
+    c3_ablate_evidence_grader: bool = False
+    c3_ablate_rrf: bool = False
+    c3_ablate_claim_check: bool = False
+    c4_disabled_tools: list[str] = field(default_factory=list)
+    c4_ablate_tool_citation: bool = False
+    c4_ablate_tool_priority_prompt: bool = False
     force_rag_preset: str = ""
     result_csv: str = ""
     run_environment: dict[str, Any] = field(default_factory=dict)
@@ -174,6 +188,14 @@ def _orchestration_for_tier(
     max_rag_tool_calls_per_round: int | None = None,
     enable_adaptive_routing: bool = True,
     enable_c3_conservative_optimization: bool = False,
+    enable_c3_final_optimization: bool = False,
+    c3_ablate_required_items: bool = False,
+    c3_ablate_evidence_grader: bool = False,
+    c3_ablate_rrf: bool = False,
+    c3_ablate_claim_check: bool = False,
+    c4_disabled_tools: list[str] | None = None,
+    c4_ablate_tool_citation: bool = False,
+    c4_ablate_tool_priority_prompt: bool = False,
 ) -> OrchestrationConfig:
     enable_c4 = tier == "c4"
     config = OrchestrationConfig(
@@ -182,6 +204,14 @@ def _orchestration_for_tier(
         enable_planning_query_rewrite=enable_planning_rewrite,
         enable_adaptive_routing=enable_adaptive_routing,
         enable_c3_conservative_optimization=enable_c3_conservative_optimization,
+        enable_c3_final_optimization=enable_c3_final_optimization,
+        c3_ablate_required_items=c3_ablate_required_items,
+        c3_ablate_evidence_grader=c3_ablate_evidence_grader,
+        c3_ablate_rrf=c3_ablate_rrf,
+        c3_ablate_claim_check=c3_ablate_claim_check,
+        c4_disabled_tools=list(c4_disabled_tools or []),
+        c4_ablate_tool_citation=c4_ablate_tool_citation,
+        c4_ablate_tool_priority_prompt=c4_ablate_tool_priority_prompt,
     )
     if use_rag_subagent_tools is not None:
         config.use_rag_subagent_tools = bool(use_rag_subagent_tools)
@@ -247,9 +277,30 @@ C34_RESULT_FIELDS = [
     "route_reason",
     "rag_pipeline_preset",
     "c3_conservative_opt_enabled",
+    "c3_final_opt_enabled",
+    "c3_ablate_required_items",
+    "c3_ablate_evidence_grader",
+    "c3_ablate_rrf",
+    "c3_ablate_claim_check",
+    "c4_disabled_tools",
+    "c4_ablate_tool_citation",
+    "c4_ablate_tool_priority_prompt",
+    "required_items",
+    "covered_items",
+    "missing_items",
+    "item_support_map",
     "final_citation_count",
     "duplicate_rag_query_count",
     "rag_query_blocked_count",
+    "actual_tool_calls",
+    "actual_tool_names",
+    "expected_tool_names",
+    "tool_call_count",
+    "tool_success_count",
+    "tool_call_success_rate",
+    "tool_selection_match",
+    "tool_output_citation_ids",
+    "tool_output_used",
 ]
 
 
@@ -355,6 +406,157 @@ def _json_cell(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def _extract_tool_message_content(text: str) -> str:
+    """Extract content from LangChain ToolMessage repr, else return text as-is."""
+    s = (text or "").strip()
+    if not s.startswith("content="):
+        return s
+    body = s[len("content=") :]
+    for marker in (" name=", " tool_call_id=", " id="):
+        if marker in body:
+            body = body.split(marker, 1)[0]
+            break
+    try:
+        parsed = ast.literal_eval(body)
+        if isinstance(parsed, str):
+            return parsed
+    except (SyntaxError, ValueError):
+        pass
+    return s
+
+
+def _parse_tool_json_output(text: str) -> dict[str, Any]:
+    content = _extract_tool_message_content(text)
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+EXPECTED_TOOL_MAP: dict[str, set[str]] = {
+    "file_reader": {"topic4_file_read"},
+    "calculator": {"topic4_calculator"},
+    "table_analyzer": {"topic4_table_analyzer"},
+    "code_runner": {"topic4_code_runner", "sandbox_exec_python"},
+    "shell_exec": {"topic4_shell_exec"},
+}
+
+
+def _expected_tool_names(required_tool: str) -> list[str]:
+    raw = (required_tool or "").strip()
+    if not raw:
+        return []
+    out: list[str] = []
+    for item in re.split(r"[,;/|，；、\s]+", raw):
+        key = item.strip()
+        if not key or key.lower() in {"none", "c4", "c4-multi-tool"}:
+            continue
+        if key in EXPECTED_TOOL_MAP:
+            out.append(key)
+    return _unique(out)
+
+
+def _tool_selection_match(expected: list[str], actual: list[str]) -> bool | str:
+    if not expected:
+        return ""
+    actual_set = set(actual)
+    for tool_name in expected:
+        allowed = EXPECTED_TOOL_MAP.get(tool_name, {tool_name})
+        if not (actual_set & allowed):
+            return False
+    return True
+
+
+def _tool_output_citation_ids(answer: str) -> list[str]:
+    pattern = r"tool:[A-Za-z0-9_]+#\d+"
+    return _unique(re.findall(pattern, answer or ""))
+
+
+def _summarize_tool_invocations(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    calls: list[dict[str, Any]] = []
+    by_tool_count: dict[str, int] = {}
+    for row in rows:
+        event = str(row.get("event") or "")
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if event == "tool_invoke_start":
+            name = str(payload.get("tool") or payload.get("name") or "").strip()
+            if not name:
+                continue
+            by_tool_count[name] = by_tool_count.get(name, 0) + 1
+            calls.append(
+                {
+                    "id": f"tool:{name}#{by_tool_count[name]}",
+                    "name": name,
+                    "ok": "",
+                    "input": {
+                        k: v
+                        for k, v in payload.items()
+                        if k not in {"tool", "name", "type"}
+                    },
+                    "output_tool": "",
+                    "output_ok": "",
+                    "output_error": "",
+                    "output_preview": "",
+                    "output_chars": "",
+                }
+            )
+        elif event in {"tool_invoke_end", "tool_invoke_error"}:
+            name = str(payload.get("tool") or payload.get("name") or "").strip()
+            if not name:
+                continue
+            target = next(
+                (
+                    call
+                    for call in reversed(calls)
+                    if call["name"] == name and call["ok"] == ""
+                ),
+                None,
+            )
+            if target is None:
+                by_tool_count[name] = by_tool_count.get(name, 0) + 1
+                target = {
+                    "id": f"tool:{name}#{by_tool_count[name]}",
+                    "name": name,
+                    "input": {},
+                }
+                calls.append(target)
+            preview = str(payload.get("output_preview") or "")
+            parsed = _parse_tool_json_output(preview)
+            err = str(payload.get("error") or parsed.get("error") or "").strip()
+            parsed_ok = parsed.get("ok")
+            if isinstance(parsed_ok, bool):
+                ok = parsed_ok and not err
+            else:
+                ok = event == "tool_invoke_end" and not err
+            target.update(
+                {
+                    "ok": ok,
+                    "output_tool": str(parsed.get("tool") or name),
+                    "output_ok": parsed_ok if isinstance(parsed_ok, bool) else "",
+                    "output_error": err,
+                    "output_preview": preview[:800],
+                    "output_chars": payload.get("output_chars", ""),
+                }
+            )
+
+    for call in calls:
+        if call.get("ok") == "":
+            call["ok"] = False
+            call["output_error"] = call.get("output_error") or "missing_tool_end_event"
+    actual_names = _unique([str(c.get("name") or "") for c in calls])
+    success_count = sum(1 for c in calls if c.get("ok") is True)
+    return {
+        "actual_tool_calls": calls,
+        "actual_tool_names": actual_names,
+        "tool_call_count": len(calls),
+        "tool_success_count": success_count,
+        "tool_call_success_rate": round(success_count / len(calls), 4) if calls else "",
+    }
+
+
 def _split_ids(value: str) -> list[str]:
     raw = (value or "").strip()
     if not raw:
@@ -425,6 +627,7 @@ def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
     judge_payload: dict[str, Any] = {}
     rag_events: list[dict[str, Any]] = []
     tool_counts: dict[str, int] = {}
+    tool_summary = _summarize_tool_invocations(rows)
     duplicate_rag_query_count = 0
     rag_query_blocked_count = 0
     for row in rows:
@@ -530,6 +733,7 @@ def _summarize_trace(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "revision_instruction": judge_payload.get("revision_instruction", ""),
         "duplicate_rag_query_count": duplicate_rag_query_count,
         "rag_query_blocked_count": rag_query_blocked_count,
+        **tool_summary,
     }
 
 
@@ -542,6 +746,15 @@ def _formal_result_row(
     answer: str,
     route: RouteDecision | None = None,
     c3_conservative_opt_enabled: bool = False,
+    c3_final_opt_enabled: bool = False,
+    c3_ablate_required_items: bool = False,
+    c3_ablate_evidence_grader: bool = False,
+    c3_ablate_rrf: bool = False,
+    c3_ablate_claim_check: bool = False,
+    c4_disabled_tools: list[str] | None = None,
+    c4_ablate_tool_citation: bool = False,
+    c4_ablate_tool_priority_prompt: bool = False,
+    required_items: list[str] | None = None,
 ) -> dict[str, Any]:
     trace = _summarize_trace(_load_trace_rows(row.session_id))
     gold_doc_ids = _split_ids((reference or {}).get("evidence_doc_id", ""))
@@ -551,6 +764,13 @@ def _formal_result_row(
     final_citation_chunk_ids = _chunk_ids_in_text(answer)
     if not final_citation_chunk_ids:
         final_citation_chunk_ids = _chunk_ids_from_citations(trace["citations"])
+    expected_tools = _expected_tool_names(task.required_tool)
+    actual_tools = trace["actual_tool_names"]
+    tool_citation_ids = _tool_output_citation_ids(answer)
+    req_items = required_items or []
+    support_map = item_support_map(answer, req_items)
+    missing_items = [item for item, status in support_map.items() if status == "missing"]
+    covered_items = [item for item, status in support_map.items() if status == "covered"]
 
     retrieved_doc_set = set(retrieved_doc_ids)
     retrieved_chunk_set = set(retrieved_chunk_ids)
@@ -601,9 +821,30 @@ def _formal_result_row(
         "route_reason": route.reason if route else "",
         "rag_pipeline_preset": route.rag_preset if route else "",
         "c3_conservative_opt_enabled": c3_conservative_opt_enabled,
+        "c3_final_opt_enabled": c3_final_opt_enabled,
+        "c3_ablate_required_items": c3_ablate_required_items,
+        "c3_ablate_evidence_grader": c3_ablate_evidence_grader,
+        "c3_ablate_rrf": c3_ablate_rrf,
+        "c3_ablate_claim_check": c3_ablate_claim_check,
+        "c4_disabled_tools": _json_cell(c4_disabled_tools or []),
+        "c4_ablate_tool_citation": c4_ablate_tool_citation,
+        "c4_ablate_tool_priority_prompt": c4_ablate_tool_priority_prompt,
+        "required_items": _json_cell(req_items),
+        "covered_items": _json_cell(covered_items),
+        "missing_items": _json_cell(missing_items),
+        "item_support_map": _json_cell(support_map),
         "final_citation_count": len(final_citation_chunk_ids),
         "duplicate_rag_query_count": trace["duplicate_rag_query_count"],
         "rag_query_blocked_count": trace["rag_query_blocked_count"],
+        "actual_tool_calls": _json_cell(trace["actual_tool_calls"]),
+        "actual_tool_names": _json_cell(actual_tools),
+        "expected_tool_names": _json_cell(expected_tools),
+        "tool_call_count": trace["tool_call_count"],
+        "tool_success_count": trace["tool_success_count"],
+        "tool_call_success_rate": trace["tool_call_success_rate"],
+        "tool_selection_match": _tool_selection_match(expected_tools, actual_tools),
+        "tool_output_citation_ids": _json_cell(tool_citation_ids),
+        "tool_output_used": bool(tool_citation_ids),
     }
 
 
@@ -690,6 +931,15 @@ def _formal_row_for_c2_kb(
     planning_rewrite_enabled: bool,
     kb_raw: dict[str, Any] | None = None,
     c3_conservative_opt_enabled: bool = False,
+    c3_final_opt_enabled: bool = False,
+    c3_ablate_required_items: bool = False,
+    c3_ablate_evidence_grader: bool = False,
+    c3_ablate_rrf: bool = False,
+    c3_ablate_claim_check: bool = False,
+    c4_disabled_tools: list[str] | None = None,
+    c4_ablate_tool_citation: bool = False,
+    c4_ablate_tool_priority_prompt: bool = False,
+    required_items: list[str] | None = None,
 ) -> dict[str, Any]:
     """C2 轻路径结果行（使用单次 RAG 返回的 chunk 列表）。"""
     if kb_raw:
@@ -706,6 +956,10 @@ def _formal_row_for_c2_kb(
     gold_chunk_ids = _split_ids((reference or {}).get("evidence_chunk_id") or "")
     gold_doc_covered = sum(1 for d in gold_doc_ids if d in doc_ids)
     gold_chunk_covered = sum(1 for c in gold_chunk_ids if c in chunk_ids)
+    req_items = required_items or []
+    support_map = item_support_map(row.answer, req_items)
+    missing_items = [item for item, status in support_map.items() if status == "missing"]
+    covered_items = [item for item, status in support_map.items() if status == "covered"]
     return {
         "question_id": task.question_id,
         "question": task.question,
@@ -752,9 +1006,30 @@ def _formal_row_for_c2_kb(
         "route_reason": route.reason,
         "rag_pipeline_preset": route.rag_preset,
         "c3_conservative_opt_enabled": c3_conservative_opt_enabled,
+        "c3_final_opt_enabled": c3_final_opt_enabled,
+        "c3_ablate_required_items": c3_ablate_required_items,
+        "c3_ablate_evidence_grader": c3_ablate_evidence_grader,
+        "c3_ablate_rrf": c3_ablate_rrf,
+        "c3_ablate_claim_check": c3_ablate_claim_check,
+        "c4_disabled_tools": _json_cell(c4_disabled_tools or []),
+        "c4_ablate_tool_citation": c4_ablate_tool_citation,
+        "c4_ablate_tool_priority_prompt": c4_ablate_tool_priority_prompt,
+        "required_items": _json_cell(req_items),
+        "covered_items": _json_cell(covered_items),
+        "missing_items": _json_cell(missing_items),
+        "item_support_map": _json_cell(support_map),
         "final_citation_count": len(citations),
         "duplicate_rag_query_count": 0,
         "rag_query_blocked_count": 0,
+        "actual_tool_calls": _json_cell([]),
+        "actual_tool_names": _json_cell([]),
+        "expected_tool_names": _json_cell(_expected_tool_names(task.required_tool)),
+        "tool_call_count": 0,
+        "tool_success_count": 0,
+        "tool_call_success_rate": "",
+        "tool_selection_match": "",
+        "tool_output_citation_ids": _json_cell([]),
+        "tool_output_used": False,
     }
 
 
@@ -774,6 +1049,14 @@ def run_c34_batch(
     max_rag_tool_calls_per_round: int | None = None,
     enable_adaptive_routing: bool = True,
     enable_c3_conservative_optimization: bool = False,
+    enable_c3_final_optimization: bool = False,
+    c3_ablate_required_items: bool = False,
+    c3_ablate_evidence_grader: bool = False,
+    c3_ablate_rrf: bool = False,
+    c3_ablate_claim_check: bool = False,
+    c4_disabled_tools: list[str] | None = None,
+    c4_ablate_tool_citation: bool = False,
+    c4_ablate_tool_priority_prompt: bool = False,
     force_rag_preset: str | None = None,
     result_csv: Path | None = None,
     log_dir: Path | None = None,
@@ -807,6 +1090,14 @@ def run_c34_batch(
         max_rag_tool_calls_per_round=max_rag_tool_calls_per_round,
         enable_adaptive_routing=enable_adaptive_routing,
         enable_c3_conservative_optimization=enable_c3_conservative_optimization,
+        enable_c3_final_optimization=enable_c3_final_optimization,
+        c3_ablate_required_items=c3_ablate_required_items,
+        c3_ablate_evidence_grader=c3_ablate_evidence_grader,
+        c3_ablate_rrf=c3_ablate_rrf,
+        c3_ablate_claim_check=c3_ablate_claim_check,
+        c4_disabled_tools=c4_disabled_tools,
+        c4_ablate_tool_citation=c4_ablate_tool_citation,
+        c4_ablate_tool_priority_prompt=c4_ablate_tool_priority_prompt,
     )
     repeat_n = max(1, int(repeat))
     out_dir = log_dir or _default_log_dir(tier)
@@ -821,6 +1112,14 @@ def run_c34_batch(
         split=split,
         planning_rewrite_enabled=enable_planning_rewrite,
         c3_conservative_opt_enabled=enable_c3_conservative_optimization,
+        c3_final_opt_enabled=enable_c3_final_optimization,
+        c3_ablate_required_items=c3_ablate_required_items,
+        c3_ablate_evidence_grader=c3_ablate_evidence_grader,
+        c3_ablate_rrf=c3_ablate_rrf,
+        c3_ablate_claim_check=c3_ablate_claim_check,
+        c4_disabled_tools=list(c4_disabled_tools or []),
+        c4_ablate_tool_citation=c4_ablate_tool_citation,
+        c4_ablate_tool_priority_prompt=c4_ablate_tool_priority_prompt,
         force_rag_preset=(force_rag_preset or "").strip(),
         result_csv=str(result_csv_path),
         run_environment=_run_environment(),
@@ -838,6 +1137,14 @@ def run_c34_batch(
             "result_csv": str(result_csv_path),
             "planning_rewrite_enabled": enable_planning_rewrite,
             "c3_conservative_opt_enabled": enable_c3_conservative_optimization,
+            "c3_final_opt_enabled": enable_c3_final_optimization,
+            "c3_ablate_required_items": c3_ablate_required_items,
+            "c3_ablate_evidence_grader": c3_ablate_evidence_grader,
+            "c3_ablate_rrf": c3_ablate_rrf,
+            "c3_ablate_claim_check": c3_ablate_claim_check,
+            "c4_disabled_tools": list(c4_disabled_tools or []),
+            "c4_ablate_tool_citation": c4_ablate_tool_citation,
+            "c4_ablate_tool_priority_prompt": c4_ablate_tool_priority_prompt,
             "force_rag_preset": (force_rag_preset or "").strip(),
             "max_orchestration_rounds": orch_base.max_orchestration_rounds,
             "max_execute_retries_per_round": orch_base.max_execute_retries_per_round,
@@ -858,6 +1165,11 @@ def run_c34_batch(
         set_audit_session_id(sid)
         events_dump: list[dict[str, Any]] = []
         t0 = time.perf_counter()
+        required_items = [] if c3_ablate_required_items else extract_required_items(
+            task.question,
+            task_type=task.task_type,
+            plan_text=task.note,
+        )
 
         def on_event(ev: RuntimeEvent) -> None:
             row = {
@@ -914,6 +1226,16 @@ def run_c34_batch(
                     use_rag_subagent_tools=orch_base.use_rag_subagent_tools,
                     enable_adaptive_routing=orch_base.enable_adaptive_routing,
                     enable_c3_conservative_optimization=orch_base.enable_c3_conservative_optimization,
+                    enable_c3_final_optimization=orch_base.enable_c3_final_optimization,
+                    c3_ablate_required_items=orch_base.c3_ablate_required_items,
+                    c3_ablate_evidence_grader=orch_base.c3_ablate_evidence_grader,
+                    c3_ablate_rrf=orch_base.c3_ablate_rrf,
+                    c3_ablate_claim_check=orch_base.c3_ablate_claim_check,
+                    c4_disabled_tools=list(orch_base.c4_disabled_tools),
+                    c4_ablate_tool_citation=orch_base.c4_ablate_tool_citation,
+                    c4_ablate_tool_priority_prompt=orch_base.c4_ablate_tool_priority_prompt,
+                    c3_task_type=task.task_type,
+                    c3_required_items=required_items,
                     max_orchestration_rounds=orch_base.max_orchestration_rounds,
                     max_execute_retries_per_round=orch_base.max_execute_retries_per_round,
                     max_rag_tool_calls_per_round=orch_base.max_rag_tool_calls_per_round,
@@ -921,6 +1243,18 @@ def run_c34_batch(
                     prefer_complete_when_grounded=orch_base.prefer_complete_when_grounded,
                 )
                 apply_route_to_orchestration(orch, route, tier=tier)
+                if (
+                    enable_c3_final_optimization
+                    and not c3_ablate_required_items
+                    and tier == "c3"
+                ):
+                    final_budget = c3_final_rag_budget(
+                        task_type=task.task_type,
+                        question=task.question,
+                        required_items=required_items,
+                    )
+                    orch.max_rag_tool_calls_per_round = final_budget
+                    orch.max_total_rag_calls = final_budget
                 if max_orchestration_rounds is not None:
                     orch.max_orchestration_rounds = max(1, int(max_orchestration_rounds))
                 if max_execute_retries_per_round is not None:
@@ -1004,6 +1338,15 @@ def run_c34_batch(
             "note": task.note,
             "planning_rewrite_enabled": enable_planning_rewrite,
             "c3_conservative_opt_enabled": enable_c3_conservative_optimization,
+            "c3_final_opt_enabled": enable_c3_final_optimization,
+            "c3_ablate_required_items": c3_ablate_required_items,
+            "c3_ablate_evidence_grader": c3_ablate_evidence_grader,
+            "c3_ablate_rrf": c3_ablate_rrf,
+            "c3_ablate_claim_check": c3_ablate_claim_check,
+            "c4_disabled_tools": list(c4_disabled_tools or []),
+            "c4_ablate_tool_citation": c4_ablate_tool_citation,
+            "c4_ablate_tool_priority_prompt": c4_ablate_tool_priority_prompt,
+            "required_items": required_items,
             "execution_route": route.mode,
             "route_reason": route.reason,
             "rag_pipeline_preset": route.rag_preset,
@@ -1026,6 +1369,15 @@ def run_c34_batch(
                     planning_rewrite_enabled=enable_planning_rewrite,
                     kb_raw=kb_raw,
                     c3_conservative_opt_enabled=enable_c3_conservative_optimization,
+                    c3_final_opt_enabled=enable_c3_final_optimization,
+                    c3_ablate_required_items=c3_ablate_required_items,
+                    c3_ablate_evidence_grader=c3_ablate_evidence_grader,
+                    c3_ablate_rrf=c3_ablate_rrf,
+                    c3_ablate_claim_check=c3_ablate_claim_check,
+                    c4_disabled_tools=list(c4_disabled_tools or []),
+                    c4_ablate_tool_citation=c4_ablate_tool_citation,
+                    c4_ablate_tool_priority_prompt=c4_ablate_tool_priority_prompt,
+                    required_items=required_items,
                 )
             )
         else:
@@ -1038,6 +1390,15 @@ def run_c34_batch(
                     answer=row.answer,
                     route=route,
                     c3_conservative_opt_enabled=enable_c3_conservative_optimization,
+                    c3_final_opt_enabled=enable_c3_final_optimization,
+                    c3_ablate_required_items=c3_ablate_required_items,
+                    c3_ablate_evidence_grader=c3_ablate_evidence_grader,
+                    c3_ablate_rrf=c3_ablate_rrf,
+                    c3_ablate_claim_check=c3_ablate_claim_check,
+                    c4_disabled_tools=list(c4_disabled_tools or []),
+                    c4_ablate_tool_citation=c4_ablate_tool_citation,
+                    c4_ablate_tool_priority_prompt=c4_ablate_tool_priority_prompt,
+                    required_items=required_items,
                 )
             )
         _write_result_csv(result_csv_path, formal_rows)

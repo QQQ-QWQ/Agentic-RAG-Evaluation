@@ -303,6 +303,8 @@ def resolve_document_path(plan: SessionPlan) -> Path | None:
     if not plan.document_path or not looks_like_document_path(plan.document_path):
         return None
     p = Path(plan.document_path).expanduser().resolve()
+    if p.suffix.lower() not in {".txt", ".md", ".markdown", ".pdf", ".docx"}:
+        return None
     if p.is_file():
         return p
     return None
@@ -318,6 +320,11 @@ def compose_layer2_user_message(
     kb_execution_notes: str | None = None,
     enable_c4_tools: bool = True,
     enable_c3_conservative_optimization: bool = False,
+    enable_c3_final_optimization: bool = False,
+    c3_task_type: str = "",
+    c3_required_items: list[str] | None = None,
+    c4_ablate_tool_citation: bool = False,
+    c4_ablate_tool_priority_prompt: bool = False,
 ) -> str:
     """拼第二层 HumanMessage：嵌入第一层规划；可选附加编排系统备注（研判重试等）。"""
     pipes = ", ".join(plan.suggested_pipelines) if plan.suggested_pipelines else "(由你自选)"
@@ -366,6 +373,35 @@ def compose_layer2_user_message(
             "本地路径用 topic4_file_read；入库用 topic4_file_ingest；"
             "网页入库用 topic4_firecrawl_scrape_to_kb。\n"
         )
+        c4_tool_evidence_block = (
+            "\n[C4 tool execution and evidence rules]\n"
+            "- For .csv/.tsv paths, do not use topic4_file_read as the primary reader; use topic4_table_analyzer first.\n"
+            "- Prefer topic4_file_read only for non-tabular local text, markdown, code, config, PDF, or DOCX files.\n"
+            "- Prefer topic4_table_analyzer for CSV/TSV inspection, row filtering, value_counts, groupby_count, and column_mean.\n"
+            "- Prefer topic4_calculator for arithmetic after the required numbers have been extracted.\n"
+            "- Prefer topic4_code_runner for Python snippets or Python scripts over CSV/project files; use topic4_shell_exec only as a fallback for shell-only inspection.\n"
+            "- For CSV mean/difference tasks, usually use table_analyzer first to inspect/extract values, then calculator for final arithmetic.\n"
+            "- If a required file is missing, say it is missing and do not fabricate any number, row, output, or statistic.\n"
+            "- In the final answer, cite tool evidence with stable local ids in the order each tool is called, for example [tool:topic4_file_read#1], [tool:topic4_table_analyzer#1], [tool:topic4_calculator#1], or [tool:topic4_code_runner#1].\n"
+            "- Do not cite a tool id unless that tool was actually called and its output directly supports the claim.\n"
+            "- For Q034-style questions, answer which metric improved the most, not which system is best; use absolute difference C2 - C0 unless the user explicitly asks for relative percent; list all ties.\n"
+            "- For Q035-style main_problem counts, ignore blank/null main_problem values in the main distribution; mention blanks only as a note.\n"
+            "- For Q039-style code-file analysis, distinguish data acquisition methods from local saving/writing/output methods. Do not count save_md/open(..., 'w')/print as data acquisition. Valid acquisition evidence can include urllib.request urlopen for APIs, Fetcher.get for documentation or GitHub pages, and page.get_all_text extraction from fetched pages.\n"
+            "- For Q043-style tool-selection questions, explicitly mention table_analyzer + calculator when CSV values must be extracted before arithmetic.\n"
+        )
+        if c4_ablate_tool_priority_prompt:
+            c4_tool_evidence_block += (
+                "\n[C4 tool-priority ablation]\n"
+                "- Ignore the task-specific tool priority rules above for this ablation run.\n"
+                "- Choose tools from the available tool list using only the user request and tool descriptions.\n"
+                "- Do not rely on Q034/Q035/Q039/Q043-specific correction rules.\n"
+            )
+        if c4_ablate_tool_citation:
+            c4_tool_evidence_block += (
+                "\n[C4 tool-citation ablation]\n"
+                "- Do not include [tool:...] citation ids in the final answer for this ablation run.\n"
+                "- Still use tool outputs internally, but phrase evidence in natural language without stable tool citation ids.\n"
+            )
     else:
         tool_hint = (
             "【C3 模式】仅 topic4_list_rag_pipelines / topic4_rag_query；"
@@ -374,6 +410,7 @@ def compose_layer2_user_message(
             else "第一层已标记 needs_retrieval_tools=false：不要仅为「答题」去调用 topic4_rag_query。"
         )
         kb_tool_line = ""
+        c4_tool_evidence_block = ""
         parsed_block = ""
         web_line = ""
     conservative_block = ""
@@ -399,6 +436,20 @@ def compose_layer2_user_message(
             "- Citation budget: single-object answers normally use 1-3 citations; comparison or multi-document answers normally use 3-6 citations. Remove background citations before removing required-item coverage.\n"
             "- More retrieved evidence does not imply permission to make stronger claims. If evidence only partially supports an item, phrase the answer as partial support.\n"
         )
+    if enable_c3_final_optimization and not enable_c4_tools:
+        items = c3_required_items or []
+        item_line = ", ".join(items) if items else "(extract from the user question)"
+        conservative_block += (
+            "\n[C3-final required-item coverage repair]\n"
+            f"- task_type={c3_task_type or 'unknown'}; required_items={item_line}.\n"
+            "- Use rag_subagent_c3_final for comparison/classification/multi-object tasks when c3_lite_v2 evidence is too narrow or a required item is missing.\n"
+            "- Keep the total RAG budget low: simple_qa 1 call; fuzzy_query and insufficient_evidence 2 calls; multi_doc/comparison/classification normally 3 calls, with one targeted repair call only when a required item is uncovered.\n"
+            "- Before the final answer, build an internal coverage checklist: required_item, supporting_chunk_id, support_status, answer_point.\n"
+            "- Cover every required item. If evidence is missing after the allowed repair call, write that this specific item has insufficient evidence; do not omit it and do not refuse the whole question.\n"
+            "- For classification/grouping tasks, you may group items from titles, abstracts, method descriptions, or summaries when directly cited; do not reject only because the source lacks an explicit type field.\n"
+            "- Evidence Grader output is a filter, not a hard deletion rule. If kept evidence is too narrow for all required items, use the strongest RRF/retrieved chunks as context, but cite only chunks that directly support the claim.\n"
+            "- Preserve quality over breadth: do not return to long exploratory retrieval loops; repair only the missing required item or unsupported claim.\n"
+        )
     return (
         "【第二层接入 · 第一层规划结果】\n"
         f"- 任务摘要：{plan.task_summary}\n"
@@ -417,6 +468,7 @@ def compose_layer2_user_message(
         f"{tool_hint}\n"
         f"{web_line}"
         f"{kb_tool_line}"
+        f"{c4_tool_evidence_block}"
         f"{conservative_block}"
         + (
             f"\n【系统侧·知识库与入库（以 documents.csv 为准）】\n{kb_execution_notes.strip()}\n"

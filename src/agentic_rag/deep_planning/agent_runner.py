@@ -87,6 +87,24 @@ DEFAULT_AGENT_SYSTEM_PROMPT = """\
 3. 禁止编造工具未返回的引用或片段。
 4. 最终中文答复简洁可读。
 5. 数值题优先 topic4_calculator 或 topic4_table_analyzer；读代码/跑片段用 topic4_code_runner；系统命令仅用 topic4_shell_exec，勿臆造未注册工具。
+
+C4 工具证据要求：
+- 本地文件/配置读取优先 topic4_file_read；CSV 统计优先 topic4_table_analyzer；已抽取数值后的算术优先 topic4_calculator；Python 片段和项目 CSV 脚本优先 topic4_code_runner。
+- topic4_shell_exec 只作 shell-only fallback，不要在能用 topic4_code_runner 时优先使用 shell。
+- 最终答案必须把关键结论绑定到真实工具输出，例如 [tool:topic4_file_read#1]、[tool:topic4_table_analyzer#1]、[tool:topic4_calculator#1]、[tool:topic4_code_runner#1]。
+- 缺文件或工具返回 ok=false 时，必须保守说明无法完成，不得编造数值或输出。
+- 表格题先确认列名和目标行，再统计/计算；代码文件分析必须区分数据获取方式与本地保存/输出方式。
+"""
+
+DEFAULT_AGENT_SYSTEM_PROMPT += """
+
+C4 CSV/TSV hard rule:
+- For any .csv or .tsv path, do not use topic4_file_read as the primary reader.
+- Use topic4_table_analyzer first for CSV/TSV preview, column inspection, filtering, counts, means, and metric comparison.
+- Use topic4_calculator only after values have been extracted from the table.
+- Use topic4_file_read only for non-tabular local text, markdown, code, config, PDF, or DOCX files.
+- For Q034-style metric improvement questions, use absolute difference C2 - C0 unless the user explicitly asks for relative percent, and list tied largest improvements.
+- For Q039-style code-file analysis, do not count local save/write/output as data acquisition. Valid acquisition evidence can include urllib.request/urlopen API calls, Fetcher.get web-page retrieval, GitHub/documentation page retrieval, and page.get_all_text extraction from fetched pages.
 """
 
 DEFAULT_AGENT_SYSTEM_PROMPT_C3 = """\
@@ -121,6 +139,9 @@ def build_topic4_deep_agent(
     additional_tools: list[Any] | None = None,
     enable_c4_tools: bool = True,
     use_rag_subagent_tools: bool = False,
+    enable_c3_final_tools: bool = False,
+    c3_final_pipeline_id: str = "c3_final",
+    disabled_tools: list[str] | None = None,
 ):
     """创建 Deep Agent（内置 todos / 虚拟文件系统等 + Topic4 RAG 工具；可选沙箱）。
 
@@ -149,6 +170,9 @@ def build_topic4_deep_agent(
         sandbox_workspace=sandbox_workspace if enable_c4_tools else None,
         enable_c4_tools=enable_c4_tools,
         use_rag_subagent_tools=use_rag_subagent_tools,
+        enable_c3_final_tools=enable_c3_final_tools,
+        c3_final_pipeline_id=c3_final_pipeline_id,
+        disabled_tools=disabled_tools,
     )
     if additional_tools:
         tools = [*tools, *additional_tools]

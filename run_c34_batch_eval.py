@@ -88,6 +88,46 @@ def build_c34_batch_parser(*, add_help: bool = True) -> argparse.ArgumentParser:
         help="开启 C3 内部保守优化：重复检索抑制、引用筛选提示和 claim-level self-check",
     )
     parser.add_argument(
+        "--c3-final-opt",
+        action="store_true",
+        help="Enable C3-final required-item coverage repair without changing C3 conservative runs.",
+    )
+    parser.add_argument(
+        "--c3-ablate-required-items",
+        action="store_true",
+        help="C3 ablation: disable required-item extraction and targeted repair.",
+    )
+    parser.add_argument(
+        "--c3-ablate-evidence-grader",
+        action="store_true",
+        help="C3 ablation: route C3-final through a no-evidence-grader preset.",
+    )
+    parser.add_argument(
+        "--c3-ablate-rrf",
+        action="store_true",
+        help="C3 ablation: route C3-final through score fusion instead of RRF.",
+    )
+    parser.add_argument(
+        "--c3-ablate-claim-check",
+        action="store_true",
+        help="C3 ablation: disable claim-level grounding and judge prompts.",
+    )
+    parser.add_argument(
+        "--disable-tools",
+        default="",
+        help="C4 ablation: comma-separated logical/concrete tools to disable, e.g. file_reader,calculator,table_analyzer,code_runner,all.",
+    )
+    parser.add_argument(
+        "--c4-ablate-tool-citation",
+        action="store_true",
+        help="C4 ablation: do not bind final answer claims to [tool:...] citations.",
+    )
+    parser.add_argument(
+        "--c4-ablate-tool-priority-prompt",
+        action="store_true",
+        help="C4 ablation: weaken task-specific tool-priority prompt rules.",
+    )
+    parser.add_argument(
         "--force-rag-preset",
         default="",
         help="强制所有题走指定 C0/C1/C2 RAG preset，用于 C2 Stage2/Stage3 同题对照",
@@ -132,6 +172,16 @@ def main_from_args(args: argparse.Namespace) -> int:
         use_rag_subagent_tools=not args.no_subagent_tools,
         max_rag_tool_calls_per_round=args.max_rag_calls,
         enable_c3_conservative_optimization=args.c3_conservative_opt,
+        enable_c3_final_optimization=args.c3_final_opt,
+        c3_ablate_required_items=args.c3_ablate_required_items,
+        c3_ablate_evidence_grader=args.c3_ablate_evidence_grader,
+        c3_ablate_rrf=args.c3_ablate_rrf,
+        c3_ablate_claim_check=args.c3_ablate_claim_check,
+        c4_disabled_tools=[
+            x.strip() for x in args.disable_tools.split(",") if x.strip()
+        ],
+        c4_ablate_tool_citation=args.c4_ablate_tool_citation,
+        c4_ablate_tool_priority_prompt=args.c4_ablate_tool_priority_prompt,
         force_rag_preset=args.force_rag_preset or None,
         result_csv=args.result_csv,
         log_dir=args.log_dir,

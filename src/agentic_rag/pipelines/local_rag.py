@@ -468,6 +468,8 @@ def _apply_evidence_grader(
     enabled: bool = False,
     backend: str = "llm",
     max_chunks: int = 8,
+    min_partial_relevance: float = 0.55,
+    min_keep: int = 2,
 ) -> tuple[list[EvidenceChunk], list[dict[str, Any]], dict[str, int]]:
     if not enabled or not hits:
         return hits, [], {}
@@ -478,7 +480,13 @@ def _apply_evidence_grader(
         backend=backend,
         max_chunks=max_chunks,
     )
-    filtered = filter_hits_by_grades(hits, grades, task_type=task_type)
+    filtered = filter_hits_by_grades(
+        hits,
+        grades,
+        task_type=task_type,
+        min_partial_relevance=min_partial_relevance,
+        min_keep=min_keep,
+    )
     return filtered, [g.to_dict() for g in grades], usage
 
 
@@ -509,6 +517,8 @@ def run_c0_with_index(
     use_evidence_grader: bool = False,
     evidence_grader_backend: str = "llm",
     evidence_grader_max_chunks: int = 8,
+    evidence_grader_min_partial_relevance: float = 0.55,
+    evidence_grader_min_keep: int = 2,
 ) -> dict:
     started = time.perf_counter()
     error = ""
@@ -555,6 +565,8 @@ def run_c0_with_index(
             enabled=use_evidence_grader,
             backend=evidence_grader_backend,
             max_chunks=evidence_grader_max_chunks,
+            min_partial_relevance=evidence_grader_min_partial_relevance,
+            min_keep=evidence_grader_min_keep,
         )
         answer, answer_usage = generate_answer_from_hits(
             question,
@@ -628,6 +640,8 @@ def run_c1_with_index(
     use_evidence_grader: bool = False,
     evidence_grader_backend: str = "llm",
     evidence_grader_max_chunks: int = 8,
+    evidence_grader_min_partial_relevance: float = 0.55,
+    evidence_grader_min_keep: int = 2,
 ) -> dict:
     started = time.perf_counter()
     error = ""
@@ -686,6 +700,8 @@ def run_c1_with_index(
             enabled=use_evidence_grader,
             backend=evidence_grader_backend,
             max_chunks=evidence_grader_max_chunks,
+            min_partial_relevance=evidence_grader_min_partial_relevance,
+            min_keep=evidence_grader_min_keep,
         )
         answer, answer_usage = generate_answer_from_hits(
             question,

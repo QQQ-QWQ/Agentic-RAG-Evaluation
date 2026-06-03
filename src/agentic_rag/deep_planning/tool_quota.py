@@ -21,6 +21,7 @@ RAG_TOOL_NAMES = frozenset(
         "rag_subagent_c1",
         "rag_subagent_c2",
         "rag_subagent_c3_lite",
+        "rag_subagent_c3_final",
     }
 )
 
